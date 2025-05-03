@@ -25,8 +25,17 @@ class YouTubeDownloader:
         output_path.mkdir(parents=True, exist_ok=True)
 
         video_url = f"https://www.youtube.com/watch?v={video_id}"
+        # Progress callback to visualize downloading
+        total_size = {'size': None}
+        def on_progress(stream, chunk, bytes_remaining):  # noqa: ARG001
+            # Initialize total size
+            if total_size['size'] is None:
+                total_size['size'] = stream.filesize
+            downloaded = total_size['size'] - bytes_remaining
+            percent = (downloaded / total_size['size'] * 100) if total_size['size'] else 0
+            print(f"\rDownloading audio... {percent:5.1f}%", end='', flush=True)
         try:
-            yt = YouTube(video_url)
+            yt = YouTube(video_url, on_progress_callback=on_progress)
         except Exception as e:
             raise RuntimeError(f"Failed to initialize YouTube object for '{video_id}': {e}")
 
@@ -46,6 +55,10 @@ class YouTubeDownloader:
                 output_path=str(output_path),
                 filename_prefix=f"audio_{video_id}_"
             )
+            # Newline after progress bar
+            print('', flush=True)
         except Exception as e:
-            raise RuntimeError(f"Audio download failed: {e}")
+            # Ensure newline before error
+            print('', flush=True)
+            raise RuntimeError(f"Audio download failed: {e}") from e
         return Path(downloaded_file)
