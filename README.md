@@ -1,37 +1,54 @@
-# LLM-Lecturer 
+# Course Components CLI
 
-This project provides functionality for transcribing audio files using OpenAI's Whisper API and manipulating the resulting transcript using OpenAI's GPT-3.5 API. The project can also translate the transcript into different languages using GPT-3.5.
+This project provides a command-line interface (CLI) to generate course components—starting with lectures—from YouTube videos using OpenAI's APIs.
 
 ## Requirements
 
-Before using the project, you must have the following installed:
-
-- Python 3.7 or higher
-- The OpenAI Python library (`openai`) - you can install this library using pip: `pip install openai`
-- An OpenAI API key - you can obtain an API key from the OpenAI website: https://beta.openai.com/docs/api-reference/introduction
+1. Python 3.8 or higher
+2. An OpenAI API key set in the environment: `export OPENAI_API_KEY=your_api_key`
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Ensure `pytube` is installed (included in `requirements.txt`).
+4. (Optional) Install the yt-dlp tool if not already installed:
+   ```bash
+   pip install yt-dlp
+   ```
 
 ## Usage
 
-To use the project, follow these steps:
+Generate a lecture in Markdown format from a YouTube video ID:
 
-1. Clone or download the project code to your local machine.
-2. Set your OpenAI API key as an environment variable with the name `OPENAI_API_KEY`.
-3. Install the `openai` library using pip: `pip install openai`.
-4. Navigate to the project directory in your terminal or command prompt.
-5. Run the `view.py` file using Python: `python view.py`.
-6. Follow the prompts to choose an audio file, transcribe the audio, save the transcript to a file, and translate the transcript to a chosen language.
+```bash
+python main.py create-lecture <VIDEO_ID> [OPTIONS]
+```
 
-Note: The audio files should be located in the `audio` folder of the project directory. The transcripts and translations will be saved to the `outputs` folder.
+Alternatively, run without arguments to select features interactively:
+
+- ```bash
+python main.py
+```
+
+Options:
+- `<VIDEO_ID>`: YouTube video identifier (e.g., `dQw4w9WgXcQ`).
+- `--output, -o`: (Optional) Path to save the generated Markdown file. Defaults to printing to stdout.
+- `--sections, -s`: Number of main sections in the lecture outline. Defaults to 3.
+
+Example:
+```bash
+python main.py create-lecture dQw4w9WgXcQ -o lecture.md -s 4
+```
 
 ## Contributing
 
-If you would like to contribute to the project, please fork the repository and create a pull request with your changes. Before submitting a pull request, make sure to test your changes and ensure that they do not break any existing functionality.
+Contributions are welcome! Please open an issue or submit a pull request.
 
 
 You can tip me via LN through this [link](https://getalby.com/p/asi0).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE file](./license.md) for details.
+This project is licensed under the MIT License. See `license.md` for details.
 
 

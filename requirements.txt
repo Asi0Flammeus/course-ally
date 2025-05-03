@@ -1,0 +1,4 @@
+click>=8.0
+pytube>=14.0.0
+openai>=1.77.0
+requests>=2.25.0
