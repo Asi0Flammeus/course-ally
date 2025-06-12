@@ -51,14 +51,14 @@ def interactive_menu() -> None:
     elif cmd_name == 'extract-playlist-transcripts':
         # Collect command arguments
         playlist_url = input("Enter YouTube playlist URL: ")
-        output_dir = input("Output directory [transcripts]: ") or 'transcripts'
+        subfolder = input("Optional subfolder name (leave blank for none): ").strip()
         format_choice = input("Output format (txt/json) [txt]: ") or 'txt'
         
         # Build command arguments list
         args = [cmd_name, playlist_url]
         
-        if output_dir != 'transcripts':
-            args.extend(['-d', output_dir])
+        if subfolder:
+            args.extend(['-s', subfolder])
         if format_choice != 'txt':
             args.extend(['-f', format_choice])
             

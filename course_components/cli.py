@@ -76,9 +76,11 @@ def create_lecture(video_id: str, output: str, sections: int) -> None:
 @click.argument('playlist_url')
 @click.option('--output-dir', '-d', type=click.Path(), default='transcripts',
               help='Directory to save transcript files.')
+@click.option('--subfolder', '-s', type=str, default=None,
+              help='Optional subfolder name within transcripts directory.')
 @click.option('--format', '-f', type=click.Choice(['txt', 'json']), default='txt',
               help='Output format for transcripts.')
-def extract_playlist_transcripts(playlist_url: str, output_dir: str, format: str) -> None:
+def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: str, format: str) -> None:
     """
     Extract transcripts from all videos in a YouTube playlist.
 
@@ -89,7 +91,12 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, format: str
     downloader = YouTubeDownloader()
     transcription_service = TranscriptionService()
     
-    output_path = Path(output_dir)
+    # Always use transcripts as base directory
+    base_path = Path('transcripts')
+    if subfolder:
+        output_path = base_path / subfolder
+    else:
+        output_path = base_path
     output_path.mkdir(parents=True, exist_ok=True)
     
     click.echo('🎬 Starting playlist transcript extraction...')
@@ -101,21 +108,15 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, format: str
     def playlist_progress(message):
         click.echo(f'📋 {message}')
     
-    # Get playlist videos
+    # Get playlist video IDs (fastest method)
     try:
-        videos = downloader.get_playlist_videos(playlist_url, progress_callback=playlist_progress)
+        video_ids = downloader.get_playlist_video_ids(playlist_url, progress_callback=playlist_progress)
         click.echo('─' * 60)
-        if not videos:
+        if not video_ids:
             click.echo("❌ No videos found in playlist.")
             return
             
-        click.echo(f'✅ Ready to process {len(videos)} videos')
-        
-        # Calculate estimated time (rough estimate: 30 seconds per minute of video)
-        total_duration_str = ", ".join([v.get('duration_string', 'Unknown') for v in videos[:5]])
-        if len(videos) > 5:
-            total_duration_str += f" ... (and {len(videos)-5} more)"
-        click.echo(f'📊 Video durations: {total_duration_str}')
+        click.echo(f'✅ Ready to process {len(video_ids)} videos')
         
     except Exception as e:
         click.echo(f"❌ Error extracting playlist: {e}", err=True)
@@ -133,22 +134,27 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, format: str
     
     click.echo('─' * 60)
     
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for idx, video in enumerate(videos, 1):
-            video_id = video['id']
-            video_title = video['title']
-            video_duration = video.get('duration_string', 'Unknown')
-            
-            click.echo(f'\n🎥 [{idx}/{len(videos)}] Processing: {video_title}')
-            click.echo(f'⏱️  Duration: {video_duration} | Video ID: {video_id}')
-            
-            video_start_time = time.time()
-            
+    # Process videos individually: download → convert → transcribe → cleanup
+    for idx, video_id in enumerate(video_ids, 1):
+        click.echo(f'\n🎥 [{idx}/{len(video_ids)}] Processing video ID: {video_id}')
+        
+        # Check if video is already transcribed
+        existing_files = list(output_path.glob(f"*{video_id}*"))
+        if existing_files:
+            click.echo(f'    ⏭️  Skipping - already transcribed: {existing_files[0].name}')
+            continue
+        
+        video_start_time = time.time()
+        
+        # Use individual temp directory for each video
+        with tempfile.TemporaryDirectory() as video_tmpdir:
             try:
-                # Download audio
-                audio_path = downloader.download_audio(video_id, tmpdir, progress_callback=video_progress)
+                # Download and convert audio for this video only
+                click.echo('    🔽 Downloading and converting audio...')
+                audio_path = downloader.download_audio(video_id, video_tmpdir, progress_callback=video_progress)
                 
-                # Transcribe audio
+                # Transcribe audio immediately
+                click.echo('    🎤 Transcribing audio...')
                 transcript = transcription_service.transcribe(audio_path, progress_callback=video_progress)
                 
                 # Calculate stats
@@ -157,20 +163,17 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, format: str
                 total_words += word_count
                 total_characters += char_count
                 
-                # Save transcript
-                safe_title = "".join(c for c in video_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                safe_title = safe_title[:50]  # Limit filename length
-                filename = f"{idx:02d}_{safe_title}_{video_id}"
+                # Save transcript (simplified filename since we don't have title)
+                filename = f"{idx:02d}_video_{video_id}"
                 
                 if format == 'txt':
                     transcript_file = output_path / f"{filename}.txt"
                     
                     # Add metadata header to txt files
+                    video_url = f"https://www.youtube.com/watch?v={video_id}"
                     metadata_header = f"""# Video Transcript
-Title: {video_title}
 Video ID: {video_id}
-Duration: {video_duration}
-URL: {video['url']}
+URL: {video_url}
 Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
 Words: {word_count} | Characters: {char_count}
 
@@ -181,11 +184,10 @@ Words: {word_count} | Characters: {char_count}
                     transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
                     click.echo(f'    ✅ Transcript saved to {transcript_file.name}')
                 else:
+                    video_url = f"https://www.youtube.com/watch?v={video_id}"
                     transcripts_data.append({
                         'video_id': video_id,
-                        'title': video_title,
-                        'url': video['url'],
-                        'duration': video_duration,
+                        'url': video_url,
                         'transcript': transcript,
                         'word_count': word_count,
                         'character_count': char_count,
@@ -195,6 +197,7 @@ Words: {word_count} | Characters: {char_count}
                 successful_transcripts += 1
                 video_time = time.time() - video_start_time
                 click.echo(f'    ⏱️  Completed in {video_time:.1f}s ({word_count} words)')
+                click.echo(f'    🗑️  Audio file cleaned up automatically')
                 
             except Exception as e:
                 failed_transcripts += 1
@@ -210,7 +213,7 @@ Words: {word_count} | Characters: {char_count}
         summary_data = {
             'playlist_url': playlist_url,
             'extraction_date': time.strftime('%Y-%m-%d %H:%M:%S'),
-            'total_videos': len(videos),
+            'total_videos': len(video_ids),
             'successful_transcripts': successful_transcripts,
             'failed_transcripts': failed_transcripts,
             'total_words': total_words,
@@ -227,9 +230,9 @@ Words: {word_count} | Characters: {char_count}
     click.echo('═' * 60)
     click.echo('📊 EXTRACTION SUMMARY')
     click.echo('═' * 60)
-    click.echo(f'✅ Successful transcripts: {successful_transcripts}/{len(videos)}')
+    click.echo(f'✅ Successful transcripts: {successful_transcripts}/{len(video_ids)}')
     if failed_transcripts > 0:
-        click.echo(f'❌ Failed transcripts: {failed_transcripts}/{len(videos)}')
+        click.echo(f'❌ Failed transcripts: {failed_transcripts}/{len(video_ids)}')
     click.echo(f'📝 Total words transcribed: {total_words:,}')
     click.echo(f'📄 Total characters: {total_characters:,}')
     click.echo(f'⏱️  Total processing time: {total_time:.1f}s ({total_time/60:.1f} minutes)')
