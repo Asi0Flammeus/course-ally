@@ -1,6 +1,8 @@
 from typing import List
 import json
-import openai
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 
 class LectureGenerator:
     """
@@ -13,6 +15,15 @@ class LectureGenerator:
         Args:
             model: OpenAI chat model identifier.
         """
+        # Load environment variables
+        load_dotenv()
+        
+        # Initialize OpenAI client
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not found in environment variables")
+        
+        self.client = OpenAI(api_key=api_key)
         self.model = model
 
     def generate_outline(self, transcript: str, num_sections: int = 3) -> List[str]:
@@ -28,14 +39,16 @@ class LectureGenerator:
         """
         prompt = (
             f"Based on the following transcript, create a lecture outline with "
-            f"{num_sections} main section titles. Return the titles as a JSON array.\n\n"
+            f"{num_sections} sub sections.\n\n"
             f"Transcript:\n{transcript}"
         )
-        response = openai.ChatCompletion.create(
+        
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}]
         )
-        content = response["choices"][0]["message"]["content"]
+        
+        content = response.choices[0].message.content
         try:
             sections = json.loads(content)
             if not isinstance(sections, list):
@@ -67,13 +80,16 @@ class LectureGenerator:
                 f"Using the following transcript, write a detailed lecture section titled '{title}'."\
                 f"\n\nTranscript:\n{transcript}"
             )
-            response = openai.ChatCompletion.create(
+            
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}]
             )
-            content = response["choices"][0]["message"]["content"]
+            
+            content = response.choices[0].message.content
             # Append section with markdown heading
             markdown_parts.append(f"## {title}\n\n{content}")
+        
         # Combine all sections
         return "\n\n".join(markdown_parts)
 
@@ -91,3 +107,4 @@ class LectureGenerator:
         titles = self.generate_outline(transcript, num_sections=num_sections)
         lecture_md = self.generate_lecture(transcript, titles)
         return lecture_md
+
