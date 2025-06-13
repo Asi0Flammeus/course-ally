@@ -50,13 +50,13 @@ def interactive_menu() -> None:
             sys.exit(1)
     elif cmd_name == 'extract-playlist-transcripts':
         # Collect command arguments
-        playlist_url = input("Enter YouTube playlist URL: ")
+        youtube_url = input("Enter YouTube URL (video or playlist): ")
         subfolder = input("Optional subfolder name (leave blank for none): ").strip()
         format_choice = input("Output format (txt/json) [txt]: ") or 'txt'
         max_workers = input("Maximum parallel workers [4]: ") or '4'
         
         # Build command arguments list
-        args = [cmd_name, playlist_url]
+        args = [cmd_name, youtube_url]
         
         if subfolder:
             args.extend(['-s', subfolder])

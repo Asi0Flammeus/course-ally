@@ -10,6 +10,7 @@ import yt_dlp
 from course_components.downloader import YouTubeDownloader
 from course_components.transcription import TranscriptionService
 from course_components.lecture import LectureGenerator
+from course_components.utils import detect_youtube_url_type
 
 @click.group()
 def cli() -> None:
@@ -76,7 +77,7 @@ def create_lecture(video_id: str, output: str, sections: int) -> None:
             click.echo(lecture_md)
 
 @cli.command('extract-playlist-transcripts')
-@click.argument('playlist_url')
+@click.argument('youtube_url')
 @click.option('--output-dir', '-d', type=click.Path(), default='transcripts',
               help='Directory to save transcript files.')
 @click.option('--subfolder', '-s', type=str, default=None,
@@ -85,13 +86,26 @@ def create_lecture(video_id: str, output: str, sections: int) -> None:
               help='Output format for transcripts.')
 @click.option('--max-workers', '-w', type=int, default=4,
               help='Maximum number of parallel workers for transcription.')
-def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: str, format: str, max_workers: int) -> None:
+def extract_playlist_transcripts(youtube_url: str, output_dir: str, subfolder: str, format: str, max_workers: int) -> None:
     """
-    Extract transcripts from all videos in a YouTube playlist.
+    Extract transcripts from YouTube content (auto-detects videos vs playlists).
 
-    PLAYLIST_URL is the YouTube playlist URL.
+    YOUTUBE_URL can be either a single video URL or playlist URL.
     """
     start_time = time.time()
+    
+    # Detect URL type
+    url_type, identifier = detect_youtube_url_type(youtube_url)
+    
+    if url_type == 'invalid':
+        click.echo("❌ Invalid YouTube URL provided.")
+        click.echo("Supported formats:")
+        click.echo("  • https://www.youtube.com/watch?v=VIDEO_ID")
+        click.echo("  • https://youtu.be/VIDEO_ID")
+        click.echo("  • https://www.youtube.com/playlist?list=PLAYLIST_ID")
+        raise click.Abort()
+    
+    click.echo(f'🔍 URL Type Detected: {url_type.upper()}')
     
     downloader = YouTubeDownloader()
     transcription_service = TranscriptionService()
@@ -104,6 +118,84 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: 
         output_path = base_path
     output_path.mkdir(parents=True, exist_ok=True)
     
+    if url_type == 'video':
+        # Handle single video
+        video_id = identifier
+        click.echo('🎥 Starting single video transcript extraction...')
+        click.echo(f'📁 Output directory: {output_path.absolute()}')
+        click.echo(f'📋 Output format: {format}')
+        click.echo('─' * 60)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Progress callback
+            def progress_callback(message):
+                click.echo(message)
+
+            try:
+                # Download audio
+                click.echo('🔽 Downloading audio from YouTube...')
+                audio_path = downloader.download_audio(video_id, tmpdir, progress_callback=progress_callback)
+                click.echo(f'Audio downloaded to {audio_path}')
+
+                # Transcribe audio
+                click.echo('🎤 Transcribing audio...')
+                transcript = transcription_service.transcribe(audio_path, progress_callback=progress_callback)
+                click.echo('Transcription completed.')
+
+                # Save transcript
+                timestamp = time.strftime('%Y%m%d_%H%M%S')
+                
+                if format == 'txt':
+                    filename = f"video_{video_id}_{timestamp}.txt"
+                    transcript_file = output_path / filename
+                    
+                    # Add metadata header
+                    video_url = f"https://www.youtube.com/watch?v={video_id}"
+                    word_count = len(transcript.split())
+                    sentence_count = len(transcript.split('\n'))
+                    
+                    metadata_header = f"""# Video Transcript
+Video ID: {video_id}
+URL: {video_url}
+Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
+Words: {word_count} | Sentences: {sentence_count}
+
+{'='*60}
+
+"""
+                    
+                    transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                    click.echo(f'📄 Transcript saved to {transcript_file}')
+                    
+                else:  # JSON format
+                    filename = f"video_{video_id}_{timestamp}.json"
+                    transcript_file = output_path / filename
+                    
+                    video_url = f"https://www.youtube.com/watch?v={video_id}"
+                    transcript_data = {
+                        'video_id': video_id,
+                        'url': video_url,
+                        'transcript': transcript,
+                        'word_count': len(transcript.split()),
+                        'sentence_count': len(transcript.split('\n')),
+                        'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    
+                    with open(transcript_file, 'w', encoding='utf-8') as f:
+                        json.dump(transcript_data, f, indent=2, ensure_ascii=False)
+                    
+                    click.echo(f'📄 Transcript saved to {transcript_file}')
+
+                click.echo(f'📁 Output location: {output_path.absolute()}')
+                click.echo('✅ Single video transcription completed!')
+                return
+
+            except Exception as e:
+                click.echo(f"❌ Error: {e}", err=True)
+                raise click.Abort()
+    
+    # Handle playlist (existing logic)
+    playlist_url = youtube_url
     click.echo('🎬 Starting playlist transcript extraction...')
     click.echo(f'📁 Output directory: {output_path.absolute()}')
     click.echo(f'📋 Output format: {format}')

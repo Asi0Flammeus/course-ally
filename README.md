@@ -7,16 +7,18 @@ A powerful command-line tool for extracting and processing YouTube content. Gene
 1. **Python 3.8 or higher**
 2. **OpenAI API key**: Set in environment variable `export OPENAI_API_KEY=your_api_key`
 3. **FFmpeg**: Required for audio processing and chunking large files
+
    ```bash
    # Ubuntu/Debian
    sudo apt install ffmpeg
-   
+
    # macOS
    brew install ffmpeg
-   
+
    # Windows
    # Download from https://ffmpeg.org/download.html
    ```
+
 4. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
@@ -25,6 +27,7 @@ A powerful command-line tool for extracting and processing YouTube content. Gene
 ## Features
 
 ### 🎓 Create Lecture
+
 Generate structured lecture content from a single YouTube video.
 
 ```bash
@@ -32,35 +35,49 @@ python main.py create-lecture <VIDEO_ID> [OPTIONS]
 ```
 
 **Options:**
+
 - `--output, -o`: Save location for markdown file
 - `--sections, -s`: Number of main sections (default: 3)
 
 **What it does:**
+
 - Downloads and converts video to audio
 - Transcribes audio using OpenAI Whisper
 - Generates structured lecture content with sections and key points
 - Outputs clean markdown format
 
-### 🎬 Extract Playlist Transcripts
-Transcribe all videos from a YouTube playlist with parallel processing.
+### 🎬 Extract Transcripts
+
+Smart transcription that automatically detects video vs playlist URLs.
 
 ```bash
-python main.py extract-playlist-transcripts <PLAYLIST_URL> [OPTIONS]
+python main.py extract-playlist-transcripts <YOUTUBE_URL> [OPTIONS]
 ```
 
 **Options:**
+
 - `--subfolder, -s`: Optional subfolder in outputs/transcripts
 - `--format, -f`: Output format (txt/json, default: txt)
-- `--max-workers, -w`: Parallel workers for faster processing (default: 4)
+- `--max-workers, -w`: Parallel workers for playlists (default: 4)
 
 **What it does:**
-- Extracts all video IDs from playlist
-- Downloads and transcribes videos in parallel (4x faster!)
-- Automatically chunks large audio files (>25MB) for processing
-- Saves individual transcript files with metadata
-- Supports both text and JSON output formats
+
+- **Smart URL Detection**: Automatically recognizes video vs playlist URLs
+- **Single Videos**: Downloads, transcribes, and saves with metadata
+- **Playlists**: Processes all videos in parallel (4x faster!)
+- **Formatted Output**: One sentence per line for better readability
+- **Large File Support**: Automatically chunks audio files >25MB
+- **Unified Interface**: No need to choose between video/playlist commands
+
+**Supported URL formats:**
+
+- `https://www.youtube.com/watch?v=VIDEO_ID` (single video)
+- `https://youtu.be/VIDEO_ID` (single video)
+- `https://www.youtube.com/playlist?list=PLAYLIST_ID` (playlist)
+- `https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID` (playlist)
 
 ### 🔗 Extract Playlist Links
+
 Extract and organize all video links from a YouTube playlist into markdown.
 
 ```bash
@@ -68,14 +85,16 @@ python main.py extract-playlist-links <PLAYLIST_URL> [OPTIONS]
 ```
 
 **Options:**
+
 - `--subfolder, -s`: Optional subfolder in outputs/yt_links
 - `--live-format, -l`: Use live embed format instead of regular links
 
 **What it does:**
+
 - Extracts playlist metadata and video information
 - Generates organized markdown with playlist summary
 - Creates properly formatted video links:
-  - **Regular format**: `![lecture](video_url)` 
+  - **Regular format**: `![lecture](video_url)`
   - **Live format**: `<liveUrl>https://youtube.com/embed/video_id</liveUrl>`
 - Includes video titles, durations, and playlist description
 
@@ -89,7 +108,7 @@ outputs/
 │   ├── subfolder/       # Optional subfolders
 │   └── *.txt/*.json     # Transcript files
 └── yt_links/            # Playlist link exports
-    ├── subfolder/       # Optional subfolders  
+    ├── subfolder/       # Optional subfolders
     └── *.md             # Markdown link files
 ```
 
@@ -102,6 +121,7 @@ python main.py
 ```
 
 The interactive menu will guide you through:
+
 1. Feature selection
 2. Input collection (URLs, options)
 3. Configuration (workers, formats, etc.)
@@ -109,16 +129,19 @@ The interactive menu will guide you through:
 ## Advanced Features
 
 ### 🚀 Parallel Processing
+
 - Process multiple videos simultaneously (up to 4 workers by default)
 - Configurable worker count for optimal performance
 - Thread-safe progress reporting
 
-### 📦 Large File Handling  
+### 📦 Large File Handling
+
 - Automatic chunking for audio files >25MB
 - Smart duration-based splitting using FFmpeg
 - Seamless chunk transcription and recombination
 
 ### 🎯 Smart Resumption
+
 - Skips already processed videos automatically
 - Continues interrupted playlist processing
 - Maintains consistent file naming
@@ -127,11 +150,8 @@ The interactive menu will guide you through:
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
-
 You can tip me via LN through this [link](https://getalby.com/p/asi0).
 
 ## License
 
 This project is licensed under the MIT License. See `license.md` for details.
-
-
