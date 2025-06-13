@@ -71,6 +71,26 @@ def interactive_menu() -> None:
         except Exception as e:
             print(f"Error: {e}")
             sys.exit(1)
+    elif cmd_name == 'extract-playlist-links':
+        # Collect command arguments
+        playlist_url = input("Enter YouTube playlist URL: ")
+        subfolder = input("Optional subfolder name (leave blank for none): ").strip()
+        live_format = input("Use live embed format? (y/N): ").lower().startswith('y')
+        
+        # Build command arguments list
+        args = [cmd_name, playlist_url]
+        
+        if subfolder:
+            args.extend(['-s', subfolder])
+        if live_format:
+            args.append('-l')
+            
+        # Execute the CLI command
+        try:
+            cli.main(args=args, standalone_mode=False)
+        except Exception as e:
+            print(f"Error: {e}")
+            sys.exit(1)
     else:
         # Handle other commands if needed
         cli.main(args=[cmd_name], standalone_mode=False)
