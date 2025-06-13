@@ -3,6 +3,8 @@ import tempfile
 import json
 import time
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 from course_components.downloader import YouTubeDownloader
 from course_components.transcription import TranscriptionService
@@ -80,7 +82,9 @@ def create_lecture(video_id: str, output: str, sections: int) -> None:
               help='Optional subfolder name within transcripts directory.')
 @click.option('--format', '-f', type=click.Choice(['txt', 'json']), default='txt',
               help='Output format for transcripts.')
-def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: str, format: str) -> None:
+@click.option('--max-workers', '-w', type=int, default=4,
+              help='Maximum number of parallel workers for transcription.')
+def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: str, format: str, max_workers: int) -> None:
     """
     Extract transcripts from all videos in a YouTube playlist.
 
@@ -102,6 +106,7 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: 
     click.echo('🎬 Starting playlist transcript extraction...')
     click.echo(f'📁 Output directory: {output_path.absolute()}')
     click.echo(f'📋 Output format: {format}')
+    click.echo(f'⚡ Max workers: {max_workers}')
     click.echo('─' * 60)
     
     # Progress callback for playlist extraction
@@ -128,49 +133,72 @@ def extract_playlist_transcripts(playlist_url: str, output_dir: str, subfolder: 
     total_words = 0
     total_characters = 0
     
-    # Progress callback for individual video processing
-    def video_progress(message):
-        click.echo(message)
+    # Thread-safe lock for updating shared variables
+    stats_lock = threading.Lock()
     
-    click.echo('─' * 60)
-    
-    # Process videos individually: download → convert → transcribe → cleanup
-    for idx, video_id in enumerate(video_ids, 1):
-        click.echo(f'\n🎥 [{idx}/{len(video_ids)}] Processing video ID: {video_id}')
+    def process_video(video_data):
+        """Process a single video: download, transcribe, and save."""
+        idx, video_id = video_data
         
         # Check if video is already transcribed
         existing_files = list(output_path.glob(f"*{video_id}*"))
         if existing_files:
-            click.echo(f'    ⏭️  Skipping - already transcribed: {existing_files[0].name}')
-            continue
+            return {
+                'status': 'skipped',
+                'video_id': video_id,
+                'message': f'Already transcribed: {existing_files[0].name}',
+                'idx': idx
+            }
         
         video_start_time = time.time()
+        
+        # Create individual instances for thread safety
+        video_downloader = YouTubeDownloader()
+        video_transcription_service = TranscriptionService()
+        
+        # Progress callback for individual video processing
+        def video_progress(message):
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(video_ids)}] {message}')
         
         # Use individual temp directory for each video
         with tempfile.TemporaryDirectory() as video_tmpdir:
             try:
+                with stats_lock:
+                    click.echo(f'\n🎥 [{idx}/{len(video_ids)}] Processing video ID: {video_id}')
+                
                 # Download and convert audio for this video only
-                click.echo('    🔽 Downloading and converting audio...')
-                audio_path = downloader.download_audio(video_id, video_tmpdir, progress_callback=video_progress)
+                with stats_lock:
+                    click.echo(f'    [{idx}/{len(video_ids)}] 🔽 Downloading and converting audio...')
+                audio_path = video_downloader.download_audio(video_id, video_tmpdir, progress_callback=video_progress)
                 
                 # Transcribe audio immediately
-                click.echo('    🎤 Transcribing audio...')
-                transcript = transcription_service.transcribe(audio_path, progress_callback=video_progress)
+                with stats_lock:
+                    click.echo(f'    [{idx}/{len(video_ids)}] 🎤 Transcribing audio...')
+                transcript = video_transcription_service.transcribe(audio_path, progress_callback=video_progress)
                 
                 # Calculate stats
                 word_count = len(transcript.split())
                 char_count = len(transcript)
-                total_words += word_count
-                total_characters += char_count
                 
                 # Save transcript (simplified filename since we don't have title)
                 filename = f"{idx:02d}_video_{video_id}"
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                
+                result_data = {
+                    'video_id': video_id,
+                    'url': video_url,
+                    'transcript': transcript,
+                    'word_count': word_count,
+                    'character_count': char_count,
+                    'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'filename': filename
+                }
                 
                 if format == 'txt':
                     transcript_file = output_path / f"{filename}.txt"
                     
                     # Add metadata header to txt files
-                    video_url = f"https://www.youtube.com/watch?v={video_id}"
                     metadata_header = f"""# Video Transcript
 Video ID: {video_id}
 URL: {video_url}
@@ -182,28 +210,67 @@ Words: {word_count} | Characters: {char_count}
 """
                     
                     transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
-                    click.echo(f'    ✅ Transcript saved to {transcript_file.name}')
-                else:
-                    video_url = f"https://www.youtube.com/watch?v={video_id}"
-                    transcripts_data.append({
-                        'video_id': video_id,
-                        'url': video_url,
-                        'transcript': transcript,
-                        'word_count': word_count,
-                        'character_count': char_count,
-                        'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
-                    })
+                    with stats_lock:
+                        click.echo(f'    [{idx}/{len(video_ids)}] ✅ Transcript saved to {transcript_file.name}')
                 
-                successful_transcripts += 1
                 video_time = time.time() - video_start_time
-                click.echo(f'    ⏱️  Completed in {video_time:.1f}s ({word_count} words)')
-                click.echo(f'    🗑️  Audio file cleaned up automatically')
+                with stats_lock:
+                    click.echo(f'    [{idx}/{len(video_ids)}] ⏱️  Completed in {video_time:.1f}s ({word_count} words)')
+                    click.echo(f'    [{idx}/{len(video_ids)}] 🗑️  Audio file cleaned up automatically')
+                
+                return {
+                    'status': 'success',
+                    'data': result_data,
+                    'idx': idx,
+                    'video_id': video_id
+                }
                 
             except Exception as e:
-                failed_transcripts += 1
-                click.echo(f"    ❌ Error processing video {video_id}: {e}", err=True)
-                click.echo(f"    ⏭️  Continuing with next video...")
-                continue
+                with stats_lock:
+                    click.echo(f"    [{idx}/{len(video_ids)}] ❌ Error processing video {video_id}: {e}", err=True)
+                return {
+                    'status': 'failed',
+                    'video_id': video_id,
+                    'error': str(e),
+                    'idx': idx
+                }
+    
+    click.echo('─' * 60)
+    click.echo(f'🚀 Starting parallel processing with {max_workers} workers...')
+    
+    # Filter out already processed videos
+    videos_to_process = []
+    for idx, video_id in enumerate(video_ids, 1):
+        existing_files = list(output_path.glob(f"*{video_id}*"))
+        if not existing_files:
+            videos_to_process.append((idx, video_id))
+        else:
+            click.echo(f'⏭️  [{idx}/{len(video_ids)}] Skipping - already transcribed: {existing_files[0].name}')
+    
+    if not videos_to_process:
+        click.echo("✅ All videos already transcribed!")
+    else:
+        click.echo(f'📊 Processing {len(videos_to_process)} videos in parallel...')
+        
+        # Process videos in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all jobs
+            future_to_video = {executor.submit(process_video, video_data): video_data for video_data in videos_to_process}
+            
+            # Process completed jobs as they finish
+            for future in as_completed(future_to_video):
+                result = future.result()
+                
+                if result['status'] == 'success':
+                    with stats_lock:
+                        successful_transcripts += 1
+                        total_words += result['data']['word_count']
+                        total_characters += result['data']['character_count']
+                        if format == 'json':
+                            transcripts_data.append(result['data'])
+                elif result['status'] == 'failed':
+                    with stats_lock:
+                        failed_transcripts += 1
     
     # Save JSON format if requested
     if format == 'json':

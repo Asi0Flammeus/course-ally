@@ -53,6 +53,7 @@ def interactive_menu() -> None:
         playlist_url = input("Enter YouTube playlist URL: ")
         subfolder = input("Optional subfolder name (leave blank for none): ").strip()
         format_choice = input("Output format (txt/json) [txt]: ") or 'txt'
+        max_workers = input("Maximum parallel workers [4]: ") or '4'
         
         # Build command arguments list
         args = [cmd_name, playlist_url]
@@ -61,6 +62,8 @@ def interactive_menu() -> None:
             args.extend(['-s', subfolder])
         if format_choice != 'txt':
             args.extend(['-f', format_choice])
+        if max_workers != '4':
+            args.extend(['-w', max_workers])
             
         # Execute the CLI command
         try:
