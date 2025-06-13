@@ -6,6 +6,7 @@ import os
 import tempfile
 import subprocess
 import math
+import re
 
 class TranscriptionService:
     """
@@ -98,6 +99,71 @@ class TranscriptionService:
         except Exception as e:
             raise RuntimeError(f"Transcription failed for {audio_file.name}: {e}")
 
+    def _format_transcript(self, transcript: str) -> str:
+        """
+        Format transcript with one sentence per line for better readability.
+        
+        Args:
+            transcript: Raw transcript text
+            
+        Returns:
+            Formatted transcript with sentences on separate lines
+        """
+        if not transcript or not transcript.strip():
+            return transcript
+        
+        # Clean up the transcript
+        text = transcript.strip()
+        
+        # First, try to split on sentence boundaries with proper punctuation
+        # This pattern matches sentence-ending punctuation followed by whitespace and a capital letter
+        sentence_endings = r'([.!?]+)\s+(?=[A-Z])'
+        
+        # Split and keep the delimiters
+        parts = re.split(sentence_endings, text)
+        
+        sentences = []
+        i = 0
+        while i < len(parts):
+            if i + 1 < len(parts) and re.match(r'^[.!?]+$', parts[i + 1]):
+                # Current part + punctuation
+                sentence = parts[i] + parts[i + 1]
+                i += 2
+            else:
+                sentence = parts[i]
+                i += 1
+            
+            sentence = sentence.strip()
+            if sentence:
+                sentences.append(sentence)
+        
+        # If we didn't get good sentence breaks, try simpler approaches
+        if len(sentences) <= 1:
+            # Fall back to splitting on periods followed by space
+            if '. ' in text:
+                parts = text.split('. ')
+                sentences = []
+                for i, part in enumerate(parts):
+                    part = part.strip()
+                    if part:
+                        # Add period back except for the last part (which may already have ending punctuation)
+                        if i < len(parts) - 1 and not part.endswith(('.', '!', '?')):
+                            part += '.'
+                        sentences.append(part)
+            else:
+                # If no good sentence breaks, keep as single block but clean it up
+                sentences = [text]
+        
+        # Clean up sentences and remove empty ones
+        cleaned_sentences = []
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if sentence and len(sentence) > 1:  # Avoid single character lines
+                cleaned_sentences.append(sentence)
+        
+        # Join sentences with newlines
+        return '\n'.join(cleaned_sentences) if cleaned_sentences else text
+
     def transcribe(self, audio_file: Union[str, Path], progress_callback=None) -> str:
         """
         Transcribes the given audio file to text.
@@ -137,11 +203,15 @@ class TranscriptionService:
                 
                 transcript = self._transcribe_single_file(audio_path, progress_callback)
                 
+                # Format transcript for better readability
+                formatted_transcript = self._format_transcript(transcript)
+                
                 if progress_callback:
                     word_count = len(transcript.split())
-                    progress_callback(f"    Transcription completed ({word_count} words, {len(transcript)} characters)")
+                    sentence_count = len(formatted_transcript.split('\n'))
+                    progress_callback(f"    Transcription completed ({word_count} words, {sentence_count} sentences)")
                 
-                return transcript
+                return formatted_transcript
                 
             except Exception as e:
                 if progress_callback:
@@ -180,13 +250,17 @@ class TranscriptionService:
                         if progress_callback:
                             progress_callback(f"    Chunk {i}/{len(chunk_files)} completed ({chunk_words} words)")
                     
-                    # Combine all transcripts
+                    # Combine all transcripts with spaces between chunks
                     full_transcript = " ".join(transcripts)
                     
-                    if progress_callback:
-                        progress_callback(f"    All chunks transcribed and combined ({total_words} words, {len(full_transcript)} characters)")
+                    # Format the combined transcript for better readability
+                    formatted_transcript = self._format_transcript(full_transcript)
                     
-                    return full_transcript
+                    if progress_callback:
+                        sentence_count = len(formatted_transcript.split('\n'))
+                        progress_callback(f"    All chunks transcribed, combined and formatted ({total_words} words, {sentence_count} sentences)")
+                    
+                    return formatted_transcript
                     
             except Exception as e:
                 if progress_callback:
