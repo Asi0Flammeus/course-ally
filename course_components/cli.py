@@ -10,6 +10,7 @@ import yt_dlp
 from course_components.downloader import YouTubeDownloader
 from course_components.transcription import TranscriptionService
 from course_components.lecture import LectureGenerator
+from course_components.chapter_generator import ChapterGenerator
 from course_components.utils import detect_youtube_url_type
 
 @click.group()
@@ -526,4 +527,257 @@ def extract_playlist_links(playlist_url: str, subfolder: str, live_format: bool)
     click.echo(f'📄 Markdown file: {md_file}')
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! Happy organizing! 📋')
+
+@cli.command('create-chapters')
+@click.option('--output-dir', '-d', type=click.Path(), default='outputs/chapters',
+              help='Directory to save chapter files.')
+@click.option('--subfolder', '-s', type=str, default=None,
+              help='Optional subfolder name within chapters directory.')
+@click.option('--max-workers', '-w', type=int, default=2,
+              help='Maximum number of parallel workers for chapter generation.')
+@click.option('--chapter-title', '-t', type=str, default=None,
+              help='Optional custom title for single file chapters.')
+def create_chapters(output_dir: str, subfolder: str, max_workers: int, chapter_title: str) -> None:
+    """
+    Create course chapter markdown files from transcript files or folders.
+
+    INPUT_PATH can be either a single transcript file or a directory containing transcript files.
+    """
+    start_time = time.time()
+    
+    # Check if outputs/transcripts directory exists
+    transcripts_base = Path('outputs/transcripts')
+    if not transcripts_base.exists():
+        click.echo("❌ No transcripts directory found at outputs/transcripts")
+        click.echo("Run extract-playlist-transcripts first to generate transcripts.")
+        raise click.Abort()
+    
+    # Get all subfolders in outputs/transcripts
+    subfolders = [f for f in transcripts_base.iterdir() if f.is_dir()]
+    if not subfolders:
+        click.echo("❌ No subfolders found in outputs/transcripts")
+        raise click.Abort()
+    
+    # Display available subfolders
+    click.echo("📁 Available transcript subfolders:")
+    for idx, folder in enumerate(subfolders, 1):
+        txt_files = list(folder.glob('*.txt'))
+        click.echo(f"  {idx}. {folder.name} ({len(txt_files)} files)")
+    
+    # Get user selection for subfolder
+    while True:
+        try:
+            choice = click.prompt("\nSelect subfolder number", type=int)
+            if 1 <= choice <= len(subfolders):
+                selected_folder = subfolders[choice - 1]
+                break
+            else:
+                click.echo(f"❌ Please enter a number between 1 and {len(subfolders)}")
+        except click.Abort:
+            raise
+        except:
+            click.echo("❌ Please enter a valid number")
+    
+    # Get all txt files in selected folder
+    all_files = list(selected_folder.glob('*.txt'))
+    if not all_files:
+        click.echo(f"❌ No .txt files found in {selected_folder.name}")
+        raise click.Abort()
+    
+    # Ask user to choose between whole subfolder or individual files
+    click.echo(f"\n📄 Found {len(all_files)} transcript files in '{selected_folder.name}'")
+    click.echo("1. Process all files in subfolder")
+    click.echo("2. Select individual files")
+    
+    while True:
+        try:
+            process_choice = click.prompt("Choose option", type=int)
+            if process_choice in [1, 2]:
+                break
+            else:
+                click.echo("❌ Please enter 1 or 2")
+        except click.Abort:
+            raise
+        except:
+            click.echo("❌ Please enter a valid number")
+    
+    if process_choice == 1:
+        # Process all files
+        mode = 'directory'
+        files_to_process = all_files
+        input_path = selected_folder
+    else:
+        # Let user select individual files
+        click.echo(f"\n📋 Files in '{selected_folder.name}':")
+        for idx, file in enumerate(all_files, 1):
+            click.echo(f"  {idx}. {file.name}")
+        
+        click.echo("\nEnter file numbers to process (comma-separated, e.g., 1,3,5):")
+        while True:
+            try:
+                file_choices = click.prompt("File numbers").strip()
+                selected_indices = [int(x.strip()) for x in file_choices.split(',')]
+                
+                # Validate all indices
+                if all(1 <= idx <= len(all_files) for idx in selected_indices):
+                    files_to_process = [all_files[idx - 1] for idx in selected_indices]
+                    mode = 'individual_files'
+                    input_path = selected_folder
+                    break
+                else:
+                    click.echo(f"❌ Please enter numbers between 1 and {len(all_files)}")
+            except click.Abort:
+                raise
+            except:
+                click.echo("❌ Please enter valid numbers separated by commas")
+    
+    click.echo(f'📚 Starting chapter generation...')
+    click.echo(f'📄 Mode: {mode}')
+    click.echo(f'📁 Input: {input_path.absolute()}')
+    click.echo(f'📝 Files to process: {len(files_to_process)}')
+    
+    # Setup output directory
+    base_path = Path(output_dir)
+    if subfolder:
+        output_path = base_path / subfolder
+    else:
+        # Use input directory name as subfolder
+        output_path = base_path / input_path.name
+    
+    output_path.mkdir(parents=True, exist_ok=True)
+    click.echo(f'📁 Output directory: {output_path.absolute()}')
+    click.echo(f'⚡ Max workers: {max_workers}')
+    click.echo('─' * 60)
+    
+    # Initialize chapter generator
+    try:
+        generator = ChapterGenerator()
+        click.echo('✅ Chapter generator initialized')
+    except Exception as e:
+        click.echo(f"❌ Error initializing chapter generator: {e}", err=True)
+        click.echo("Make sure ANTHROPIC_API_KEY is set in your .env file.")
+        raise click.Abort()
+    
+    successful_chapters = 0
+    failed_chapters = 0
+    total_transcripts_processed = 0
+    
+    # Thread-safe lock for updating shared variables
+    stats_lock = threading.Lock()
+    
+    def process_transcript_file(file_data):
+        """Process a single transcript file: generate chapter."""
+        idx, transcript_file = file_data
+        
+        # Check if chapter already exists
+        chapter_filename = transcript_file.stem + '_chapter.md'
+        chapter_file = output_path / chapter_filename
+        
+        if chapter_file.exists():
+            return {
+                'status': 'skipped',
+                'file': transcript_file.name,
+                'message': f'Chapter already exists: {chapter_filename}',
+                'idx': idx
+            }
+        
+        file_start_time = time.time()
+        
+        # Progress callback
+        def progress_callback(message):
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] {message}')
+        
+        try:
+            with stats_lock:
+                click.echo(f'\n📖 [{idx}/{len(files_to_process)}] Processing: {transcript_file.name}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] 🤖 Generating chapter with Claude...')
+            
+            # Generate chapter
+            custom_title = chapter_title if mode == 'individual_files' and len(files_to_process) == 1 else None
+            chapter_content = generator.generate_chapter_from_file(
+                transcript_file=transcript_file,
+                output_file=chapter_file,
+                chapter_title=custom_title
+            )
+            
+            # Calculate stats
+            word_count = len(chapter_content.split())
+            line_count = len(chapter_content.split('\n'))
+            
+            file_time = time.time() - file_start_time
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] ✅ Chapter saved to {chapter_filename}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] ⏱️  Completed in {file_time:.1f}s ({word_count} words, {line_count} lines)')
+            
+            return {
+                'status': 'success',
+                'file': transcript_file.name,
+                'chapter_file': chapter_filename,
+                'word_count': word_count,
+                'line_count': line_count,
+                'processing_time': file_time,
+                'idx': idx
+            }
+            
+        except Exception as e:
+            with stats_lock:
+                click.echo(f"    [{idx}/{len(files_to_process)}] ❌ Error processing {transcript_file.name}: {e}", err=True)
+            return {
+                'status': 'failed',
+                'file': transcript_file.name,
+                'error': str(e),
+                'idx': idx
+            }
+    
+    click.echo('─' * 60)
+    click.echo(f'🚀 Starting chapter generation with {max_workers} workers...')
+    
+    # Filter out already processed files
+    files_to_process_filtered = []
+    for idx, transcript_file in enumerate(files_to_process, 1):
+        chapter_filename = transcript_file.stem + '_chapter.md'
+        chapter_file = output_path / chapter_filename
+        if not chapter_file.exists():
+            files_to_process_filtered.append((idx, transcript_file))
+        else:
+            click.echo(f'⏭️  [{idx}/{len(files_to_process)}] Skipping - chapter already exists: {chapter_filename}')
+    
+    if not files_to_process_filtered:
+        click.echo("✅ All chapters already generated!")
+    else:
+        click.echo(f'📊 Processing {len(files_to_process_filtered)} files...')
+        
+        # Process files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all jobs
+            future_to_file = {executor.submit(process_transcript_file, file_data): file_data for file_data in files_to_process_filtered}
+            
+            # Process completed jobs as they finish
+            for future in as_completed(future_to_file):
+                result = future.result()
+                
+                if result['status'] == 'success':
+                    with stats_lock:
+                        successful_chapters += 1
+                        total_transcripts_processed += 1
+                elif result['status'] == 'failed':
+                    with stats_lock:
+                        failed_chapters += 1
+                        total_transcripts_processed += 1
+    
+    # Final summary
+    total_time = time.time() - start_time
+    click.echo('═' * 60)
+    click.echo('📊 CHAPTER GENERATION SUMMARY')
+    click.echo('═' * 60)
+    click.echo(f'✅ Successful chapters: {successful_chapters}/{len(files_to_process)}')
+    if failed_chapters > 0:
+        click.echo(f'❌ Failed chapters: {failed_chapters}/{len(files_to_process)}')
+    click.echo(f'📝 Total files processed: {total_transcripts_processed}')
+    click.echo(f'⏱️  Total processing time: {total_time:.1f}s ({total_time/60:.1f} minutes)')
+    if successful_chapters > 0:
+        click.echo(f'⚡ Average time per chapter: {total_time/successful_chapters:.1f}s')
+    click.echo(f'📁 Output location: {output_path.absolute()}')
+    click.echo(f'✨ All done! Happy learning! 🎓')
 
