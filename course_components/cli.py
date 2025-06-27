@@ -905,6 +905,10 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
     try:
         generator = QuizGenerator()
         click.echo('✅ Quiz generator initialized')
+        
+        # Collect author and contributor metadata
+        generator.collect_metadata()
+        
     except Exception as e:
         click.echo(f"❌ Error initializing quiz generator: {e}", err=True)
         click.echo("Make sure ANTHROPIC_API_KEY is set in your .env file.")
@@ -921,19 +925,9 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
         """Process a single chapter file: generate quiz."""
         idx, chapter_file = file_data
         
-        # Generate quiz number based on existing files
+        # Get existing quiz count for information
         existing_quizzes = [d for d in output_path.iterdir() if d.is_dir() and d.name.isdigit()]
-        quiz_number = f"{len(existing_quizzes) + 1:03d}"
-        
-        # Check if quiz already exists for this chapter
-        quiz_dir = output_path / quiz_number
-        if quiz_dir.exists():
-            return {
-                'status': 'skipped',
-                'file': chapter_file.name,
-                'message': f'Quiz directory already exists: {quiz_number}',
-                'idx': idx
-            }
+        existing_count = len(existing_quizzes)
         
         file_start_time = time.time()
         
@@ -945,34 +939,40 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
         try:
             with stats_lock:
                 click.echo(f'\n🧠 [{idx}/{len(files_to_process)}] Processing: {chapter_file.name}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] 📊 Found {existing_count} existing quizzes')
                 click.echo(f'    [{idx}/{len(files_to_process)}] 🤖 Generating quiz with Claude...')
             
-            # Generate quiz
-            quiz_data = generator.generate_quiz_from_file(chapter_file)
+            # Generate quizzes (12 total: 4 easy, 4 intermediate, 4 hard)
+            all_quizzes = generator.generate_quizzes_from_file(chapter_file)
             
             with stats_lock:
-                click.echo(f'    [{idx}/{len(files_to_process)}] 📝 Generated quiz question')
-                click.echo(f'    [{idx}/{len(files_to_process)}] ❓ Question: {quiz_data["question"][:60]}...')
+                click.echo(f'    [{idx}/{len(files_to_process)}] 📝 Generated {len(all_quizzes)} quiz questions')
+                click.echo(f'    [{idx}/{len(files_to_process)}] 🎯 Difficulties: 4 easy, 4 intermediate, 4 hard')
+                if existing_count > 0:
+                    click.echo(f'    [{idx}/{len(files_to_process)}] 📈 Will be numbered starting from {existing_count + 1:03d}')
             
-            # Interactive validation
-            with stats_lock:
-                click.echo(f'    [{idx}/{len(files_to_process)}] 🔍 Starting interactive validation...')
-                
-            # Note: This will pause parallel processing for validation
-            validated_quiz = generator.validate_quiz_interactively(quiz_data)
+            # Interactive validation for each quiz
+            validated_quizzes = []
+            for quiz_idx, quiz_data in enumerate(all_quizzes, 1):
+                with stats_lock:
+                    click.echo(f'    [{idx}/{len(files_to_process)}] 🔍 Validating question {quiz_idx}/{len(all_quizzes)} ({quiz_data["difficulty"]})')
+                    
+                # Note: This will pause parallel processing for validation
+                validated_quiz = generator.validate_quiz_interactively(quiz_data)
+                validated_quizzes.append(validated_quiz)
             
-            # Save quiz files
-            generator.save_quiz_files(validated_quiz, output_path, quiz_number)
+            # Save all quiz files
+            generator.save_multiple_quizzes(validated_quizzes, output_path, chapter_file.stem)
             
             file_time = time.time() - file_start_time
             with stats_lock:
-                click.echo(f'    [{idx}/{len(files_to_process)}] ✅ Quiz saved as {quiz_number}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] ✅ All {len(validated_quizzes)} quizzes saved')
                 click.echo(f'    [{idx}/{len(files_to_process)}] ⏱️  Completed in {file_time:.1f}s')
             
             return {
                 'status': 'success',
                 'file': chapter_file.name,
-                'quiz_number': quiz_number,
+                'quiz_count': len(validated_quizzes),
                 'processing_time': file_time,
                 'idx': idx
             }
@@ -1006,13 +1006,15 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
     click.echo('═' * 60)
     click.echo('📊 QUIZ GENERATION SUMMARY')
     click.echo('═' * 60)
-    click.echo(f'✅ Successful quizzes: {successful_quizzes}/{len(files_to_process)}')
+    click.echo(f'✅ Successful chapters: {successful_quizzes}/{len(files_to_process)}')
+    click.echo(f'🧠 Total questions generated: {successful_quizzes * 12}')
+    click.echo(f'🎯 Per chapter: 4 easy + 4 intermediate + 4 hard')
     if failed_quizzes > 0:
-        click.echo(f'❌ Failed quizzes: {failed_quizzes}/{len(files_to_process)}')
+        click.echo(f'❌ Failed chapters: {failed_quizzes}/{len(files_to_process)}')
     click.echo(f'📝 Total chapters processed: {total_chapters_processed}')
     click.echo(f'⏱️  Total processing time: {total_time:.1f}s ({total_time/60:.1f} minutes)')
     if successful_quizzes > 0:
-        click.echo(f'⚡ Average time per quiz: {total_time/successful_quizzes:.1f}s')
+        click.echo(f'⚡ Average time per chapter: {total_time/successful_quizzes:.1f}s')
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! Happy quizzing! 🧠')
 
