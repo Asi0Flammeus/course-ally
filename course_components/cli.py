@@ -11,6 +11,7 @@ from course_components.downloader import YouTubeDownloader
 from course_components.transcription import TranscriptionService
 from course_components.lecture import LectureGenerator
 from course_components.chapter_generator import ChapterGenerator
+from course_components.quiz_generator import QuizGenerator
 from course_components.utils import detect_youtube_url_type
 
 @click.group()
@@ -780,4 +781,238 @@ def create_chapters(output_dir: str, subfolder: str, max_workers: int, chapter_t
         click.echo(f'⚡ Average time per chapter: {total_time/successful_chapters:.1f}s')
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! Happy learning! 🎓')
+
+@cli.command('create-quiz')
+@click.option('--output-dir', '-d', type=click.Path(), default='outputs/quizz',
+              help='Directory to save quiz files.')
+@click.option('--subfolder', '-s', type=str, default=None,
+              help='Optional subfolder name within quizz directory.')
+@click.option('--max-workers', '-w', type=int, default=2,
+              help='Maximum number of parallel workers for quiz generation.')
+def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
+    """
+    Create quiz questions from chapter markdown files.
+    
+    Automatically detects chapters in outputs/chapters/ and creates quiz questions.
+    """
+    start_time = time.time()
+    
+    # Check if outputs/chapters directory exists
+    chapters_base = Path('outputs/chapters')
+    if not chapters_base.exists():
+        click.echo("❌ No chapters directory found at outputs/chapters")
+        click.echo("Run create-chapters first to generate chapters.")
+        raise click.Abort()
+    
+    # Get all subfolders in outputs/chapters
+    subfolders = [f for f in chapters_base.iterdir() if f.is_dir()]
+    if not subfolders:
+        click.echo("❌ No subfolders found in outputs/chapters")
+        raise click.Abort()
+    
+    # Display available subfolders
+    click.echo("📁 Available chapter subfolders:")
+    for idx, folder in enumerate(subfolders, 1):
+        md_files = list(folder.glob('*_chapter.md'))
+        click.echo(f"  {idx}. {folder.name} ({len(md_files)} chapter files)")
+    
+    # Get user selection for subfolder
+    while True:
+        try:
+            choice = click.prompt("\nSelect subfolder number", type=int)
+            if 1 <= choice <= len(subfolders):
+                selected_folder = subfolders[choice - 1]
+                break
+            else:
+                click.echo(f"❌ Please enter a number between 1 and {len(subfolders)}")
+        except click.Abort:
+            raise
+        except:
+            click.echo("❌ Please enter a valid number")
+    
+    # Get all chapter files in selected folder
+    all_files = list(selected_folder.glob('*_chapter.md'))
+    if not all_files:
+        click.echo(f"❌ No chapter files found in {selected_folder.name}")
+        raise click.Abort()
+    
+    # Ask user to choose between whole subfolder or individual files
+    click.echo(f"\n📄 Found {len(all_files)} chapter files in '{selected_folder.name}'")
+    click.echo("1. Process all chapter files")
+    click.echo("2. Select individual files")
+    
+    while True:
+        try:
+            process_choice = click.prompt("Choose option", type=int)
+            if process_choice in [1, 2]:
+                break
+            else:
+                click.echo("❌ Please enter 1 or 2")
+        except click.Abort:
+            raise
+        except:
+            click.echo("❌ Please enter a valid number")
+    
+    if process_choice == 1:
+        # Process all files
+        mode = 'directory'
+        files_to_process = all_files
+        input_path = selected_folder
+    else:
+        # Let user select individual files
+        click.echo(f"\n📋 Chapter files in '{selected_folder.name}':")
+        for idx, file in enumerate(all_files, 1):
+            click.echo(f"  {idx}. {file.name}")
+        
+        click.echo("\nEnter file numbers to process (comma-separated, e.g., 1,3,5):")
+        while True:
+            try:
+                file_choices = click.prompt("File numbers").strip()
+                selected_indices = [int(x.strip()) for x in file_choices.split(',')]
+                
+                # Validate all indices
+                if all(1 <= idx <= len(all_files) for idx in selected_indices):
+                    files_to_process = [all_files[idx - 1] for idx in selected_indices]
+                    mode = 'individual_files'
+                    input_path = selected_folder
+                    break
+                else:
+                    click.echo(f"❌ Please enter numbers between 1 and {len(all_files)}")
+            except click.Abort:
+                raise
+            except:
+                click.echo("❌ Please enter valid numbers separated by commas")
+    
+    click.echo(f'🧠 Starting quiz generation...')
+    click.echo(f'📄 Mode: {mode}')
+    click.echo(f'📁 Input: {input_path.absolute()}')
+    click.echo(f'📝 Files to process: {len(files_to_process)}')
+    
+    # Setup output directory
+    base_path = Path(output_dir)
+    if subfolder:
+        output_path = base_path / subfolder
+    else:
+        # Use input directory name as subfolder
+        output_path = base_path / input_path.name
+    
+    output_path.mkdir(parents=True, exist_ok=True)
+    click.echo(f'📁 Output directory: {output_path.absolute()}')
+    click.echo(f'⚡ Max workers: {max_workers}')
+    click.echo('─' * 60)
+    
+    # Initialize quiz generator
+    try:
+        generator = QuizGenerator()
+        click.echo('✅ Quiz generator initialized')
+    except Exception as e:
+        click.echo(f"❌ Error initializing quiz generator: {e}", err=True)
+        click.echo("Make sure ANTHROPIC_API_KEY is set in your .env file.")
+        raise click.Abort()
+    
+    successful_quizzes = 0
+    failed_quizzes = 0
+    total_chapters_processed = 0
+    
+    # Thread-safe lock for updating shared variables
+    stats_lock = threading.Lock()
+    
+    def process_chapter_file(file_data):
+        """Process a single chapter file: generate quiz."""
+        idx, chapter_file = file_data
+        
+        # Generate quiz number based on existing files
+        existing_quizzes = [d for d in output_path.iterdir() if d.is_dir() and d.name.isdigit()]
+        quiz_number = f"{len(existing_quizzes) + 1:03d}"
+        
+        # Check if quiz already exists for this chapter
+        quiz_dir = output_path / quiz_number
+        if quiz_dir.exists():
+            return {
+                'status': 'skipped',
+                'file': chapter_file.name,
+                'message': f'Quiz directory already exists: {quiz_number}',
+                'idx': idx
+            }
+        
+        file_start_time = time.time()
+        
+        # Progress callback
+        def progress_callback(message):
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] {message}')
+        
+        try:
+            with stats_lock:
+                click.echo(f'\n🧠 [{idx}/{len(files_to_process)}] Processing: {chapter_file.name}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] 🤖 Generating quiz with Claude...')
+            
+            # Generate quiz
+            quiz_data = generator.generate_quiz_from_file(chapter_file)
+            
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] 📝 Generated quiz question')
+                click.echo(f'    [{idx}/{len(files_to_process)}] ❓ Question: {quiz_data["question"][:60]}...')
+            
+            # Interactive validation
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] 🔍 Starting interactive validation...')
+                
+            # Note: This will pause parallel processing for validation
+            validated_quiz = generator.validate_quiz_interactively(quiz_data)
+            
+            # Save quiz files
+            generator.save_quiz_files(validated_quiz, output_path, quiz_number)
+            
+            file_time = time.time() - file_start_time
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] ✅ Quiz saved as {quiz_number}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] ⏱️  Completed in {file_time:.1f}s')
+            
+            return {
+                'status': 'success',
+                'file': chapter_file.name,
+                'quiz_number': quiz_number,
+                'processing_time': file_time,
+                'idx': idx
+            }
+            
+        except Exception as e:
+            with stats_lock:
+                click.echo(f"    [{idx}/{len(files_to_process)}] ❌ Error processing {chapter_file.name}: {e}", err=True)
+            return {
+                'status': 'failed',
+                'file': chapter_file.name,
+                'error': str(e),
+                'idx': idx
+            }
+    
+    click.echo('─' * 60)
+    click.echo(f'🚀 Starting quiz generation...')
+    
+    # Note: Due to interactive validation, we process files sequentially
+    for idx, chapter_file in enumerate(files_to_process, 1):
+        result = process_chapter_file((idx, chapter_file))
+        
+        if result['status'] == 'success':
+            successful_quizzes += 1
+            total_chapters_processed += 1
+        elif result['status'] == 'failed':
+            failed_quizzes += 1
+            total_chapters_processed += 1
+    
+    # Final summary
+    total_time = time.time() - start_time
+    click.echo('═' * 60)
+    click.echo('📊 QUIZ GENERATION SUMMARY')
+    click.echo('═' * 60)
+    click.echo(f'✅ Successful quizzes: {successful_quizzes}/{len(files_to_process)}')
+    if failed_quizzes > 0:
+        click.echo(f'❌ Failed quizzes: {failed_quizzes}/{len(files_to_process)}')
+    click.echo(f'📝 Total chapters processed: {total_chapters_processed}')
+    click.echo(f'⏱️  Total processing time: {total_time:.1f}s ({total_time/60:.1f} minutes)')
+    if successful_quizzes > 0:
+        click.echo(f'⚡ Average time per quiz: {total_time/successful_quizzes:.1f}s')
+    click.echo(f'📁 Output location: {output_path.absolute()}')
+    click.echo(f'✨ All done! Happy quizzing! 🧠')
 

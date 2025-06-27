@@ -115,6 +115,27 @@ def interactive_menu() -> None:
         except Exception as e:
             print(f"Error: {e}")
             sys.exit(1)
+    elif cmd_name == 'create-quiz':
+        # Collect command arguments
+        print("Create quiz questions from chapter files")
+        
+        subfolder = input("Optional subfolder name in outputs/quizz/ (leave blank for auto): ").strip()
+        max_workers = input("Maximum parallel workers [2]: ") or '2'
+        
+        # Build command arguments list
+        args = [cmd_name]
+        
+        if subfolder:
+            args.extend(['-s', subfolder])
+        if max_workers != '2':
+            args.extend(['-w', max_workers])
+            
+        # Execute the CLI command
+        try:
+            cli.main(args=args, standalone_mode=False)
+        except Exception as e:
+            print(f"Error: {e}")
+            sys.exit(1)
     else:
         # Handle other commands if needed
         cli.main(args=[cmd_name], standalone_mode=False)
