@@ -1,4 +1,5 @@
 import time
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -101,10 +102,16 @@ INSTRUCTIONS:
             temperature=0.1
         )
         
+        # Add chapter ID at the top
+        chapter_id = str(uuid.uuid4())
+        chapter_header = f"---\n{chapter_id}\n---\n<chapterId>{chapter_id}</chapterId>\n\n"
+        
         # Add metadata header if source info is provided
         if source_info:
             metadata = self._create_metadata_header(source_info)
-            chapter_content = metadata + "\n" + chapter_content
+            chapter_content = chapter_header + metadata + "\n" + chapter_content
+        else:
+            chapter_content = chapter_header + chapter_content
         
         return chapter_content
     
