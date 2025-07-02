@@ -23,43 +23,27 @@ class ChapterGenerator:
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for chapter generation."""
-        return """You are an expert course content creator. Your task is to transform video transcripts into well-structured course chapters in markdown format.
+        return """You are an expert at transforming video lectures into high-quality written course materials that maintain the instructor's authentic voice while creating professional, paragraph-based educational content.
 
-REQUIREMENTS:
-1. Use ONLY ### (h3) and #### (h4) headings - NO ## (h2) or # (h1) headings
-2. Create logical sections with ### headings for main topics
-3. Use #### headings for subtopics within sections
-4. Format content into clear, readable paragraphs
-5. Maintain the educational value and flow of the original content
-6. Remove filler words and conversational artifacts while preserving meaning
-7. Structure the content for learning, with clear topic progression
+CORE MISSION:
+Transform conversational video content into polished course chapters that read like a well-written textbook while preserving the instructor's unique teaching style, terminology, and approach.
 
-OUTPUT FORMAT:
-- Start with a ### heading for the main chapter title
-- Use ### for major sections/topics
-- Use #### for subsections/subtopics  
-- Write in clear, professional paragraphs
-- Maintain logical flow between sections
-- Keep technical accuracy from the original transcript
+VOICE PRESERVATION PRINCIPLES:
+Maintain the instructor's natural terminology, explanations, and teaching approach. Preserve the conversational clarity and logical flow that makes the original content engaging and accessible. Keep the instructor's preferred examples and emphasis points.
 
-EXAMPLE STRUCTURE:
-### Chapter Title: Core Concepts
+CONTENT STRUCTURE REQUIREMENTS:
+Use ### headings for major concepts and #### headings for detailed subtopics. Write exclusively in well-developed paragraphs that flow naturally from one idea to the next. Create smooth transitions between concepts that guide the reader through the learning progression.
 
-#### Introduction
-Clear paragraph explaining the main topic...
+PARAGRAPH WRITING STANDARDS:
+Write substantial, informative paragraphs (3-6 sentences each) that fully develop each concept. Each paragraph should focus on a single main idea with supporting details and examples. Avoid bullet points, numbered lists, or fragmented information. Instead, weave all information into coherent, readable prose that sounds natural and educational.
 
-#### Key Concept 1
-Detailed explanation with examples...
+FORMATTING PROHIBITIONS:
+NEVER use bullet points, numbered lists, or fragmented information presentation. NEVER break information into short, choppy sentences. ALWAYS write in full, flowing paragraphs that develop ideas completely. Present technical information through explanatory prose, not lists.
 
-#### Key Concept 2
-Further explanation building on previous concepts...
+EDUCATIONAL TONE:
+Write in clear, professional prose that explains concepts thoroughly. Use the instructor's conversational style but elevate it to course-grade writing. Create content that reads like a well-written textbook chapter while maintaining the accessibility of the original presentation.
 
-### Advanced Topics
-
-#### Advanced Concept 1
-More complex material...
-
-Transform the transcript while maintaining educational value and creating a professional course chapter."""
+Transform this transcript into polished educational prose that preserves the instructor's voice while meeting academic writing standards."""
     
     def generate_chapter(
         self, 
@@ -102,36 +86,84 @@ INSTRUCTIONS:
             temperature=0.1
         )
         
+        # Generate chapter title from the content (unless custom title provided)
+        if chapter_title:
+            generated_title = chapter_title
+        else:
+            generated_title = self._generate_chapter_title(chapter_content)
+        
         # Add chapter ID at the top
         chapter_id = str(uuid.uuid4())
-        chapter_header = f"---\n{chapter_id}\n---\n<chapterId>{chapter_id}</chapterId>\n\n"
+        chapter_header = f"<chapterId>{chapter_id}</chapterId>\n\n"
+        
+        # Build final content structure
+        final_content_parts = []
         
         # Add metadata header if source info is provided
         if source_info:
             metadata = self._create_metadata_header(source_info)
-            chapter_content = chapter_header + metadata + "\n" + chapter_content
-        else:
-            chapter_content = chapter_header + chapter_content
+            final_content_parts.append(metadata)
         
-        return chapter_content
+        # Add chapter ID
+        final_content_parts.append(chapter_header)
+        
+        # Add chapter title as ## heading
+        final_content_parts.append(f"## {generated_title}\n")
+        
+        # Add the generated chapter content
+        final_content_parts.append(chapter_content)
+        
+        return "\n".join(final_content_parts)
     
     def _create_metadata_header(self, source_info: Dict[str, Any]) -> str:
         """Create a metadata header for the chapter."""
-        header_lines = ["<!-- Chapter Metadata -->"]
+        header_lines = ["Chapter Metadata"]
         
         if 'video_id' in source_info:
-            header_lines.append(f"<!-- Source Video ID: {source_info['video_id']} -->")
+            header_lines.append(f"Source Video ID: {source_info['video_id']}")
         
         if 'url' in source_info:
-            header_lines.append(f"<!-- Source URL: {source_info['url']} -->")
+            header_lines.append(f"Source URL: {source_info['url']}")
         
         if 'transcript_file' in source_info:
-            header_lines.append(f"<!-- Source Transcript: {source_info['transcript_file']} -->")
+            header_lines.append(f"Source Transcript: {source_info['transcript_file']}")
         
-        header_lines.append(f"<!-- Generated: {time.strftime('%Y-%m-%d %H:%M:%S')} -->")
-        header_lines.append("<!-- Generated by Course Ally Chapter Generator -->")
+        header_lines.append(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        header_lines.append("Generated by Course Ally Chapter Generator")
+        header_lines.append("")
+        header_lines.append("---")
         
         return "\n".join(header_lines)
+    
+    def _generate_chapter_title(self, chapter_content: str) -> str:
+        """Generate a concise, pedagogical chapter title from chapter content."""
+        title_prompt = f"""Generate a concise chapter title that captures the essence of this educational content. Requirements:
+- 3-8 words that clearly identify the main topic/concept
+- Use the same terminology and tone as the original speaker
+- Make it immediately clear what this chapter teaches
+- Balance academic clarity with conversational accessibility
+- Focus on the core concept or skill being taught
+
+Provide only the title, no additional formatting.
+
+Chapter content:
+{chapter_content[:2000]}"""  # Limit content to avoid token limits
+        
+        try:
+            title = self.client.generate_text(
+                prompt=title_prompt,
+                system_prompt="You are an expert at creating clear, pedagogical chapter titles that reflect the instructor's voice and teaching style.",
+                max_tokens=50,
+                temperature=0.1
+            ).strip()
+            
+            # Clean up any quotes or extra formatting
+            title = title.strip('"').strip("'").strip()
+            
+            return title
+        except Exception as e:
+            # Fallback to a generic title if generation fails
+            return "Course Chapter"
     
     def generate_chapter_from_file(
         self, 
