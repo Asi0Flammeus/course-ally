@@ -562,8 +562,8 @@ def create_chapters(output_dir: str, subfolder: str, max_workers: int, chapter_t
     # Display available subfolders
     click.echo("📁 Available transcript subfolders:")
     for idx, folder in enumerate(subfolders, 1):
-        txt_files = list(folder.glob('*.txt'))
-        click.echo(f"  {idx}. {folder.name} ({len(txt_files)} files)")
+        md_files = list(folder.glob('*.md'))
+        click.echo(f"  {idx}. {folder.name} ({len(md_files)} files)")
     
     # Get user selection for subfolder
     while True:
@@ -579,10 +579,10 @@ def create_chapters(output_dir: str, subfolder: str, max_workers: int, chapter_t
         except:
             click.echo("❌ Please enter a valid number")
     
-    # Get all txt files in selected folder
-    all_files = list(selected_folder.glob('*.txt'))
+    # Get all md files in selected folder
+    all_files = list(selected_folder.glob('*.md'))
     if not all_files:
-        click.echo(f"❌ No .txt files found in {selected_folder.name}")
+        click.echo(f"❌ No .md files found in {selected_folder.name}")
         raise click.Abort()
     
     # Ask user to choose between whole subfolder or individual files
