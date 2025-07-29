@@ -15,7 +15,7 @@ def interactive_menu() -> None:
         help_text = cmd.help or ''
         print(f"{idx}. {name} - {help_text}")
     
-    choice = input("Enter the number of the feature: ")
+    choice = input("Enter the number of the feature: ").strip()
     try:
         sel = int(choice)
     except ValueError:
@@ -30,17 +30,17 @@ def interactive_menu() -> None:
     
     if cmd_name == 'create-lecture':
         # Collect command arguments
-        video_id = input("Enter YouTube video ID: ")
-        sections = input("Number of sections [3]: ") or '3'
-        output = input("Output file path (leave blank for stdout): ")
+        video_id = input("Enter YouTube video ID: ").strip()
+        sections = input("Number of sections [3]: ").strip() or '3'
+        output = input("Output file path (leave blank for stdout): ").strip()
         
         # Build command arguments list
         args = [cmd_name, video_id]  # Start with command and video ID
         
         if sections != '3':  # Only add if different from default
             args.extend(['-s', sections])
-        if output.strip():
-            args.extend(['-o', output.strip()])
+        if output:
+            args.extend(['-o', output])
             
         # Execute the CLI command
         try:
@@ -50,10 +50,10 @@ def interactive_menu() -> None:
             sys.exit(1)
     elif cmd_name == 'extract-playlist-transcripts':
         # Collect command arguments
-        youtube_url = input("Enter YouTube URL (video or playlist): ")
+        youtube_url = input("Enter YouTube URL (video or playlist): ").strip()
         subfolder = input("Optional subfolder name (leave blank for none): ").strip()
-        format_choice = input("Output format (txt/json) [txt]: ") or 'txt'
-        max_workers = input("Maximum parallel workers [4]: ") or '4'
+        format_choice = input("Output format (txt/json) [txt]: ").strip() or 'txt'
+        max_workers = input("Maximum parallel workers [4]: ").strip() or '4'
         
         # Build command arguments list
         args = [cmd_name, youtube_url]
@@ -73,9 +73,9 @@ def interactive_menu() -> None:
             sys.exit(1)
     elif cmd_name == 'extract-playlist-links':
         # Collect command arguments
-        playlist_url = input("Enter YouTube playlist URL: ")
+        playlist_url = input("Enter YouTube playlist URL: ").strip()
         subfolder = input("Optional subfolder name (leave blank for none): ").strip()
-        live_format = input("Use live embed format? (y/N): ").lower().startswith('y')
+        live_format = input("Use live embed format? (y/N): ").strip().lower().startswith('y')
         
         # Build command arguments list
         args = [cmd_name, playlist_url]
@@ -96,7 +96,7 @@ def interactive_menu() -> None:
         print("Create chapters from transcript files")
         
         subfolder = input("Optional subfolder name in outputs/chapters/ (leave blank for auto): ").strip()
-        max_workers = input("Maximum parallel workers [2]: ") or '2'
+        max_workers = input("Maximum parallel workers [2]: ").strip() or '2'
         chapter_title = input("Custom chapter title (for single files, leave blank for auto): ").strip()
         
         # Build command arguments list
@@ -120,7 +120,7 @@ def interactive_menu() -> None:
         print("Create quiz questions from chapter files")
         
         subfolder = input("Optional subfolder name in outputs/quizz/ (leave blank for auto): ").strip()
-        max_workers = input("Maximum parallel workers [2]: ") or '2'
+        max_workers = input("Maximum parallel workers [2]: ").strip() or '2'
         
         # Build command arguments list
         args = [cmd_name]
