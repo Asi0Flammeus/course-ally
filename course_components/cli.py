@@ -403,6 +403,120 @@ Words: {word_count} | Characters: {char_count}
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! Happy learning! 🎓')
 
+@cli.command('playlist-to-md')
+@click.option('--subfolder', '-s', type=str, default=None,
+              help='Optional subfolder name within playlist_to_md directory.')
+def playlist_to_md(subfolder: str) -> None:
+    """
+    Convert YouTube playlist to markdown file.
+    
+    Prompts for YouTube playlist URL or ID and creates a markdown file
+    with video titles and links.
+    """
+    # Get playlist URL or ID from user
+    click.echo('📺 YouTube Playlist to Markdown Converter')
+    click.echo('─' * 60)
+    playlist_input = click.prompt('Enter YouTube playlist URL or ID')
+    
+    # Detect if it's a URL or just an ID
+    if playlist_input.startswith('http'):
+        playlist_url = playlist_input
+    else:
+        # Assume it's a playlist ID
+        playlist_url = f"https://www.youtube.com/playlist?list={playlist_input}"
+    
+    start_time = time.time()
+    
+    downloader = YouTubeDownloader()
+    
+    # Set up output directory structure
+    base_path = Path('outputs') / 'playlist_to_md'
+    if subfolder:
+        output_path = base_path / subfolder
+    else:
+        output_path = base_path
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    click.echo(f'🔗 Starting playlist extraction...')
+    click.echo(f'📁 Output directory: {output_path.absolute()}')
+    click.echo('─' * 60)
+    
+    # Progress callback for playlist extraction
+    def playlist_progress(message):
+        click.echo(f'📋 {message}')
+    
+    # Get playlist videos with metadata
+    try:
+        videos = downloader.get_playlist_videos(playlist_url, progress_callback=playlist_progress)
+        click.echo('─' * 60)
+        if not videos:
+            click.echo("❌ No videos found in playlist.")
+            return
+            
+        click.echo(f'✅ Found {len(videos)} videos')
+        
+    except Exception as e:
+        click.echo(f"❌ Error extracting playlist: {e}", err=True)
+        raise click.Abort()
+    
+    # Generate markdown content
+    click.echo('📝 Generating markdown file...')
+    
+    # Get playlist metadata
+    try:
+        ydl_opts = {
+            'quiet': True, 
+            'extract_flat': True, 
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            'extractor_retries': 3,
+            'ignoreerrors': False,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            playlist_info = ydl.extract_info(playlist_url, download=False)
+            playlist_title = playlist_info.get('title', 'Unknown Playlist')
+            playlist_uploader = playlist_info.get('uploader', 'Unknown Channel')
+    except:
+        playlist_title = 'YouTube Playlist'
+        playlist_uploader = 'Unknown Channel'
+    
+    # Create markdown content following the template
+    md_content = ""
+    
+    # Add video entries
+    for video in videos:
+        video_id = video['id']
+        video_title = video['title']
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        md_content += f"## {video_title}\n"
+        md_content += f"[video]({video_url})\n\n"
+    
+    # Save markdown file
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    # Create a safe filename from playlist title
+    safe_title = "".join(c for c in playlist_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+    safe_title = safe_title.replace(' ', '_')[:50]  # Limit length
+    filename = f"{safe_title}_{timestamp}.md"
+    md_file = output_path / filename
+    
+    md_file.write_text(md_content, encoding='utf-8')
+    
+    # Final summary
+    extraction_time = time.time() - start_time
+    click.echo('═' * 60)
+    click.echo('📊 EXTRACTION SUMMARY')
+    click.echo('═' * 60)
+    click.echo(f'📺 Playlist: {playlist_title}')
+    click.echo(f'👤 Channel: {playlist_uploader}')
+    click.echo(f'🎬 Total videos: {len(videos)}')
+    click.echo(f'⏱️  Processing time: {extraction_time:.1f}s')
+    click.echo(f'📄 Markdown file: {md_file}')
+    click.echo(f'📁 Output location: {output_path.absolute()}')
+    click.echo(f'✨ All done! 📋')
+
 @cli.command('extract-playlist-links')
 @click.argument('playlist_url')
 @click.option('--subfolder', '-s', type=str, default=None,
@@ -455,7 +569,16 @@ def extract_playlist_links(playlist_url: str, subfolder: str, live_format: bool)
     
     # Get playlist metadata
     try:
-        ydl_opts = {'quiet': True, 'extract_flat': True, 'no_warnings': True}
+        ydl_opts = {
+            'quiet': True, 
+            'extract_flat': True, 
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            'extractor_retries': 3,
+            'ignoreerrors': False,
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             playlist_info = ydl.extract_info(playlist_url, download=False)
             playlist_title = playlist_info.get('title', 'Unknown Playlist')

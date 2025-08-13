@@ -23,6 +23,11 @@ class YouTubeDownloader:
             'playlistend': None,
             'no_warnings': True,
             'skip_download': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            'extractor_retries': 3,
+            'ignoreerrors': False,
         }
         
         try:
@@ -67,6 +72,11 @@ class YouTubeDownloader:
             'playlistend': None,  # Get all videos
             'no_warnings': True,
             'skip_download': True,  # We only want metadata, not downloads
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            'extractor_retries': 3,
+            'ignoreerrors': False,
         }
         
         try:
@@ -131,6 +141,11 @@ class YouTubeDownloader:
             'progress_hooks': [self._progress_hook],
             'quiet': True,
             'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            'extractor_retries': 3,
+            'ignoreerrors': False,
         }
         
         try:
