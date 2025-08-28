@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Ally - BEC Course Assistant</title>
+    
+    <!-- Favicon using emoji as data URL -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-orange: #FF6B35;
+            --dark-orange: #FF5722;
+            --light-orange: #FFE0D6;
+            --text-dark: #2C3E50;
+            --text-light: #7F8C8D;
+            --bg-white: #FFFFFF;
+            --bg-light: #F8F9FA;
+            --border-color: #E1E8ED;
+            --success-green: #27AE60;
+            --error-red: #E74C3C;
+            --warning-yellow: #F39C12;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--bg-white) 0%, var(--bg-light) 100%);
+            min-height: 100vh;
+            color: var(--text-dark);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-white);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            animation: slideDown 0.5s ease;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary-orange);
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary-orange), var(--dark-orange));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+        }
+
+        /* Feature Cards */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin: 40px 0;
+            animation: fadeInUp 0.6s ease;
+        }
+
+        .feature-card {
+            background: var(--bg-white);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-orange), var(--dark-orange));
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(255, 107, 53, 0.15);
+        }
+
+        .feature-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .feature-card.active {
+            border: 2px solid var(--primary-orange);
+            background: var(--light-orange);
+        }
+
+        .feature-icon {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, var(--light-orange), rgba(255, 107, 53, 0.1));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+
+        .feature-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 8px;
+        }
+
+        .feature-description {
+            font-size: 14px;
+            color: var(--text-light);
+            line-height: 1.5;
+        }
+
+        /* Feature Panels */
+        .feature-panel {
+            display: none;
+            background: var(--bg-white);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-top: 24px;
+            animation: slideIn 0.4s ease;
+        }
+
+        .feature-panel.active {
+            display: block;
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .panel-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .close-panel {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: var(--text-light);
+            cursor: pointer;
+            transition: color 0.3s ease;
+            padding: 8px;
+        }
+
+        .close-panel:hover {
+            color: var(--error-red);
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-dark);
+            margin-bottom: 8px;
+        }
+
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 15px;
+            color: var(--text-dark);
+            background: var(--bg-white);
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--primary-orange);
+            box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.1);
+        }
+
+        .form-hint {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 6px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-orange), var(--dark-orange));
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 107, 53, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-light);
+            color: var(--text-dark);
+            border: 2px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        /* Progress Section */
+        .progress-section {
+            display: none;
+            margin-top: 32px;
+            padding: 24px;
+            background: linear-gradient(135deg, var(--bg-light), var(--bg-white));
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .progress-section.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .progress-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .progress-bar-container {
+            background: var(--bg-light);
+            height: 8px;
+            border-radius: 100px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-orange), var(--dark-orange));
+            border-radius: 100px;
+            transition: width 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.3),
+                transparent
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .progress-messages {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--bg-white);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .progress-message {
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: slideInLeft 0.3s ease;
+        }
+
+        .progress-message.processing {
+            background: var(--light-orange);
+            color: var(--text-dark);
+        }
+
+        .progress-message.success {
+            background: rgba(39, 174, 96, 0.1);
+            color: var(--success-green);
+        }
+
+        .progress-message.error {
+            background: rgba(231, 76, 60, 0.1);
+            color: var(--error-red);
+        }
+
+        .progress-message.warning {
+            background: rgba(243, 156, 18, 0.1);
+            color: var(--warning-yellow);
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary-orange);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Animations */
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideInLeft {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Pulse Animation for Active Processing */
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(255, 107, 53, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header-content {
+                padding: 16px;
+            }
+            
+            .feature-panel {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🎓</div>
+                <span>Course Ally</span>
+            </div>
+            <div class="header-subtitle" style="color: var(--text-light); font-size: 14px;">
+                BEC Course Assistant
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="features-grid">
+            <div class="feature-card" onclick="openFeature('playlist-to-md')">
+                <div class="feature-icon">📋</div>
+                <h3 class="feature-title">Playlist to Markdown</h3>
+                <p class="feature-description">Convert YouTube playlists into organized markdown files with video links and metadata.</p>
+            </div>
+
+            <div class="feature-card" onclick="openFeature('extract-transcripts')">
+                <div class="feature-icon">📝</div>
+                <h3 class="feature-title">Extract Transcripts</h3>
+                <p class="feature-description">Extract and save transcripts from YouTube videos or entire playlists.</p>
+            </div>
+
+            <div class="feature-card" onclick="openFeature('create-chapters')">
+                <div class="feature-icon">📚</div>
+                <h3 class="feature-title">Create Chapters</h3>
+                <p class="feature-description">Generate structured course chapters from transcript files using AI.</p>
+            </div>
+
+            <div class="feature-card" onclick="openFeature('create-quiz')">
+                <div class="feature-icon">🧠</div>
+                <h3 class="feature-title">Create Quiz</h3>
+                <p class="feature-description">Generate quiz questions from chapter content to test knowledge.</p>
+            </div>
+        </div>
+
+        <!-- Playlist to Markdown Panel -->
+        <div id="playlist-to-md-panel" class="feature-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <span>📋</span>
+                    Convert Playlist to Markdown
+                </h2>
+                <button class="close-panel" onclick="closeFeature('playlist-to-md')">✕</button>
+            </div>
+            
+            <form id="playlist-to-md-form">
+                <div class="form-group">
+                    <label class="form-label">YouTube Playlist URL or ID</label>
+                    <input type="text" class="form-input" id="playlist-url" 
+                           placeholder="https://www.youtube.com/playlist?list=... or playlist ID" required>
+                    <div class="form-hint">Enter a YouTube playlist URL or just the playlist ID</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Subfolder Name (Optional)</label>
+                    <input type="text" class="form-input" id="playlist-subfolder" 
+                           placeholder="e.g., python-tutorials">
+                    <div class="form-hint">Leave empty to use automatic naming</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <span>🚀</span>
+                    Convert to Markdown
+                </button>
+            </form>
+            
+            <div id="playlist-to-md-progress" class="progress-section">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <span>Processing...</span>
+                    <button class="btn btn-secondary cancel-btn" onclick="cancelProcess('playlist-to-md')" style="margin-left: auto; display: none;">
+                        <span>🛑</span>
+                        Cancel
+                    </button>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-messages"></div>
+            </div>
+        </div>
+
+        <!-- Extract Transcripts Panel -->
+        <div id="extract-transcripts-panel" class="feature-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <span>📝</span>
+                    Extract Transcripts
+                </h2>
+                <button class="close-panel" onclick="closeFeature('extract-transcripts')">✕</button>
+            </div>
+            
+            <form id="extract-transcripts-form">
+                <div class="form-group">
+                    <label class="form-label">YouTube URL (Video or Playlist)</label>
+                    <input type="text" class="form-input" id="youtube-url" 
+                           placeholder="https://www.youtube.com/watch?v=... or playlist URL" required>
+                    <div class="form-hint">Works with single videos or entire playlists</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Subfolder Name (Optional)</label>
+                    <input type="text" class="form-input" id="transcript-subfolder" 
+                           placeholder="e.g., course-transcripts">
+                    <div class="form-hint">Transcripts will be saved in outputs/transcripts/[subfolder]</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Output Format</label>
+                    <select class="form-select" id="transcript-format">
+                        <option value="txt">Text (.txt)</option>
+                        <option value="json">JSON (.json)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Parallel Workers (for playlists)</label>
+                    <input type="number" class="form-input" id="transcript-max-workers" 
+                           value="4" min="1" max="10">
+                    <div class="form-hint">Number of videos to process simultaneously (1-10)</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <span>🎤</span>
+                    Extract Transcripts
+                </button>
+            </form>
+            
+            <div id="extract-transcripts-progress" class="progress-section">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <span>Processing...</span>
+                    <button class="btn btn-secondary cancel-btn" onclick="cancelProcess('extract-transcripts')" style="margin-left: auto; display: none;">
+                        <span>🛑</span>
+                        Cancel
+                    </button>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-messages"></div>
+            </div>
+        </div>
+
+        <!-- Create Chapters Panel -->
+        <div id="create-chapters-panel" class="feature-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <span>📚</span>
+                    Create Chapters
+                </h2>
+                <button class="close-panel" onclick="closeFeature('create-chapters')">✕</button>
+            </div>
+            
+            <form id="create-chapters-form">
+                <div class="form-group">
+                    <label class="form-label">Select Transcript Folder</label>
+                    <select class="form-select" id="chapters-transcript-folder" required>
+                        <option value="">Loading folders...</option>
+                    </select>
+                    <div class="form-hint">Choose a folder containing transcript files</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Output Subfolder (Optional)</label>
+                    <input type="text" class="form-input" id="chapters-subfolder" 
+                           placeholder="e.g., course-chapters">
+                    <div class="form-hint">Leave empty to use the transcript folder name</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <span>🤖</span>
+                    Generate Chapters
+                </button>
+            </form>
+            
+            <div id="create-chapters-progress" class="progress-section">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <span>Processing...</span>
+                    <button class="btn btn-secondary cancel-btn" onclick="cancelProcess('create-chapters')" style="margin-left: auto; display: none;">
+                        <span>🛑</span>
+                        Cancel
+                    </button>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-messages"></div>
+            </div>
+        </div>
+
+        <!-- Create Quiz Panel -->
+        <div id="create-quiz-panel" class="feature-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <span>🧠</span>
+                    Create Quiz
+                </h2>
+                <button class="close-panel" onclick="closeFeature('create-quiz')">✕</button>
+            </div>
+            
+            <form id="create-quiz-form">
+                <div class="form-group">
+                    <label class="form-label">Select Chapter Folder</label>
+                    <select class="form-select" id="quiz-chapter-folder" required>
+                        <option value="">Loading folders...</option>
+                    </select>
+                    <div class="form-hint">Choose a folder containing chapter files</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Author Name</label>
+                    <input type="text" class="form-input" id="quiz-author" 
+                           placeholder="e.g., John Doe" required>
+                    <div class="form-hint">Your name as the quiz author</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Contributors (Optional)</label>
+                    <input type="text" class="form-input" id="quiz-contributors" 
+                           placeholder="e.g., Jane Smith, Bob Johnson">
+                    <div class="form-hint">Comma-separated list of contributor names</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Output Subfolder (Optional)</label>
+                    <input type="text" class="form-input" id="quiz-subfolder" 
+                           placeholder="e.g., course-quiz">
+                    <div class="form-hint">Leave empty to use the chapter folder name</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <span>🎯</span>
+                    Generate Quiz Questions
+                </button>
+            </form>
+            
+            <div id="create-quiz-progress" class="progress-section">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <span>Processing...</span>
+                    <button class="btn btn-secondary cancel-btn" onclick="cancelProcess('create-quiz')" style="margin-left: auto; display: none;">
+                        <span>🛑</span>
+                        Cancel
+                    </button>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-messages"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load saved preferences on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            // Load saved author and contributors
+            const savedAuthor = localStorage.getItem('quiz_author');
+            const savedContributors = localStorage.getItem('quiz_contributors');
+            
+            if (savedAuthor) {
+                document.getElementById('quiz-author').value = savedAuthor;
+            }
+            if (savedContributors) {
+                document.getElementById('quiz-contributors').value = savedContributors;
+            }
+        });
+        
+        // Feature management
+        function openFeature(featureId) {
+            // Close all panels
+            document.querySelectorAll('.feature-panel').forEach(panel => {
+                panel.classList.remove('active');
+            });
+            
+            // Remove active state from all cards
+            document.querySelectorAll('.feature-card').forEach(card => {
+                card.classList.remove('active');
+            });
+            
+            // Open selected panel
+            const panel = document.getElementById(`${featureId}-panel`);
+            if (panel) {
+                panel.classList.add('active');
+                
+                // Add active state to clicked card
+                event.currentTarget.classList.add('active');
+                
+                // Load folders if needed
+                if (featureId === 'create-chapters') {
+                    loadFolders('transcripts', 'chapters-transcript-folder');
+                } else if (featureId === 'create-quiz') {
+                    loadFolders('chapters', 'quiz-chapter-folder');
+                }
+                
+                // Smooth scroll to panel
+                setTimeout(() => {
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+            }
+        }
+
+        function closeFeature(featureId) {
+            document.getElementById(`${featureId}-panel`).classList.remove('active');
+            document.querySelectorAll('.feature-card').forEach(card => {
+                card.classList.remove('active');
+            });
+        }
+
+        // Session tracking for cancellation
+        let activeSessionIds = {};
+        
+        // Cancel a running process
+        async function cancelProcess(featureId) {
+            const sessionId = activeSessionIds[featureId];
+            if (sessionId) {
+                try {
+                    await fetch(`/api/cancel/${sessionId}`, { method: 'POST' });
+                    // Hide cancel button
+                    const cancelBtn = document.querySelector(`#${featureId}-progress .cancel-btn`);
+                    if (cancelBtn) {
+                        cancelBtn.style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error cancelling process:', error);
+                }
+            }
+        }
+        
+        // Load folders from API
+        async function loadFolders(type, selectId) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">Loading...</option>';
+            
+            try {
+                const response = await fetch(`/api/list-folders?type=${type}`);
+                const data = await response.json();
+                
+                if (data.folders.length === 0) {
+                    select.innerHTML = '<option value="">No folders found</option>';
+                } else {
+                    select.innerHTML = '<option value="">Select a folder...</option>';
+                    data.folders.forEach(folder => {
+                        const option = document.createElement('option');
+                        option.value = folder;
+                        option.textContent = folder;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                select.innerHTML = '<option value="">Error loading folders</option>';
+                console.error('Error loading folders:', error);
+            }
+        }
+
+        // Progress handling with Server-Sent Events
+        function handleProgress(sessionId, progressSectionId, featureId) {
+            const progressSection = document.getElementById(progressSectionId);
+            const progressBar = progressSection.querySelector('.progress-bar');
+            const progressMessages = progressSection.querySelector('.progress-messages');
+            const cancelBtn = progressSection.querySelector('.cancel-btn');
+            
+            progressSection.classList.add('active');
+            progressMessages.innerHTML = '';
+            
+            // Store session ID for cancellation
+            activeSessionIds[featureId] = sessionId;
+            
+            // Show cancel button
+            if (cancelBtn) {
+                cancelBtn.style.display = 'inline-flex';
+            }
+            
+            const eventSource = new EventSource(`/api/progress/${sessionId}`);
+            
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.keepalive) return;
+                
+                if (data.message && data.message !== 'Connected') {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `progress-message ${data.status}`;
+                    messageDiv.innerHTML = data.message;
+                    progressMessages.appendChild(messageDiv);
+                    progressMessages.scrollTop = progressMessages.scrollHeight;
+                }
+                
+                if (data.percentage !== undefined) {
+                    progressBar.style.width = `${data.percentage}%`;
+                }
+                
+                if (data.status === 'success' || data.status === 'error') {
+                    eventSource.close();
+                    delete activeSessionIds[featureId];
+                    
+                    // Hide cancel button
+                    if (cancelBtn) {
+                        cancelBtn.style.display = 'none';
+                    }
+                    
+                    progressSection.querySelector('.progress-header').innerHTML = 
+                        data.status === 'success' 
+                            ? '<span>✅ Complete!</span>' 
+                            : '<span>❌ Error occurred</span>';
+                    
+                    // Add pulse animation for completion
+                    if (data.status === 'success') {
+                        progressSection.classList.add('pulse');
+                        setTimeout(() => progressSection.classList.remove('pulse'), 2000);
+                    }
+                }
+            };
+            
+            eventSource.onerror = () => {
+                eventSource.close();
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'progress-message error';
+                messageDiv.innerHTML = '❌ Connection lost';
+                progressMessages.appendChild(messageDiv);
+            };
+        }
+
+        // Form submissions
+        document.getElementById('playlist-to-md-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            
+            const data = {
+                playlist_url: document.getElementById('playlist-url').value,
+                subfolder: document.getElementById('playlist-subfolder').value || null
+            };
+            
+            try {
+                const response = await fetch('/api/playlist-to-md', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                handleProgress(result.session_id, 'playlist-to-md-progress', 'playlist-to-md');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            } finally {
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('extract-transcripts-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            
+            const data = {
+                youtube_url: document.getElementById('youtube-url').value,
+                subfolder: document.getElementById('transcript-subfolder').value || null,
+                format: document.getElementById('transcript-format').value,
+                max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4
+            };
+            
+            try {
+                const response = await fetch('/api/extract-transcripts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                handleProgress(result.session_id, 'extract-transcripts-progress', 'extract-transcripts');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            } finally {
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('create-chapters-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            
+            const data = {
+                transcript_folder: document.getElementById('chapters-transcript-folder').value,
+                subfolder: document.getElementById('chapters-subfolder').value || null
+            };
+            
+            try {
+                const response = await fetch('/api/create-chapters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                handleProgress(result.session_id, 'create-chapters-progress', 'create-chapters');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            } finally {
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('create-quiz-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            
+            const author = document.getElementById('quiz-author').value;
+            const contributors = document.getElementById('quiz-contributors').value;
+            
+            // Save preferences to localStorage
+            if (author) {
+                localStorage.setItem('quiz_author', author);
+            }
+            if (contributors) {
+                localStorage.setItem('quiz_contributors', contributors);
+            }
+            
+            const data = {
+                chapter_folder: document.getElementById('quiz-chapter-folder').value,
+                subfolder: document.getElementById('quiz-subfolder').value || null,
+                author: author,
+                contributors: contributors || ''
+            };
+            
+            try {
+                const response = await fetch('/api/create-quiz', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                handleProgress(result.session_id, 'create-quiz-progress', 'create-quiz');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            } finally {
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Web application dependencies
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# Include base requirements
+-r requirements.txt
