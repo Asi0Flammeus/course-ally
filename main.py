@@ -28,19 +28,17 @@ def interactive_menu() -> None:
     
     cmd_name = commands[sel - 1]
     
-    if cmd_name == 'create-lecture':
+    if cmd_name == 'playlist-to-md':
         # Collect command arguments
-        video_id = input("Enter YouTube video ID: ").strip()
-        sections = input("Number of sections [3]: ").strip() or '3'
-        output = input("Output file path (leave blank for stdout): ").strip()
+        print("Convert YouTube playlist to markdown file")
+        
+        subfolder = input("Optional subfolder name in outputs/playlist_to_md/ (leave blank for auto): ").strip()
         
         # Build command arguments list
-        args = [cmd_name, video_id]  # Start with command and video ID
+        args = [cmd_name]
         
-        if sections != '3':  # Only add if different from default
-            args.extend(['-s', sections])
-        if output:
-            args.extend(['-o', output])
+        if subfolder:
+            args.extend(['-s', subfolder])
             
         # Execute the CLI command
         try:
@@ -64,26 +62,6 @@ def interactive_menu() -> None:
             args.extend(['-f', format_choice])
         if max_workers != '4':
             args.extend(['-w', max_workers])
-            
-        # Execute the CLI command
-        try:
-            cli.main(args=args, standalone_mode=False)
-        except Exception as e:
-            print(f"Error: {e}")
-            sys.exit(1)
-    elif cmd_name == 'extract-playlist-links':
-        # Collect command arguments
-        playlist_url = input("Enter YouTube playlist URL: ").strip()
-        subfolder = input("Optional subfolder name (leave blank for none): ").strip()
-        live_format = input("Use live embed format? (y/N): ").strip().lower().startswith('y')
-        
-        # Build command arguments list
-        args = [cmd_name, playlist_url]
-        
-        if subfolder:
-            args.extend(['-s', subfolder])
-        if live_format:
-            args.append('-l')
             
         # Execute the CLI command
         try:

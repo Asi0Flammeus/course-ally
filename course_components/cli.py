@@ -9,7 +9,6 @@ import yt_dlp
 
 from course_components.downloader import YouTubeDownloader
 from course_components.transcription import TranscriptionService
-from course_components.lecture import LectureGenerator
 from course_components.chapter_generator import ChapterGenerator
 from course_components.quiz_generator import QuizGenerator
 from course_components.utils import detect_youtube_url_type
@@ -22,61 +21,6 @@ def cli() -> None:
     Use this CLI to generate various course components, such as lectures.
     """
     pass
-
-@cli.command('create-lecture')
-@click.argument('video_id')
-@click.option('--output', '-o', type=click.Path(), default=None,
-              help='Path to save the generated lecture markdown file.')
-@click.option('--sections', '-s', default=3, show_default=True,
-              help='Number of main sections for the lecture.')
-def create_lecture(video_id: str, output: str, sections: int) -> None:
-    """
-    Create a lecture markdown from a YouTube video ID.
-
-    VIDEO_ID is the YouTube video identifier (e.g., dQw4w9WgXcQ).
-    """
-    downloader = YouTubeDownloader()
-    transcription_service = TranscriptionService()  # Removed api_key parameter
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Progress callback for download and transcription
-        def progress_callback(message):
-            click.echo(message)
-
-        # Download audio
-        click.echo('Downloading audio from YouTube...')
-        try:
-            audio_path = downloader.download_audio(video_id, tmpdir, progress_callback=progress_callback)
-            click.echo(f'Audio downloaded to {audio_path}')
-        except Exception as e:
-            click.echo(f"Error downloading audio: {e}", err=True)
-            raise click.Abort()
-
-        # Transcribe audio
-        click.echo('Transcribing audio...')
-        try:
-            transcript = transcription_service.transcribe(audio_path, progress_callback=progress_callback)
-            click.echo('Transcription completed.')
-        except Exception as e:
-            click.echo(f"Error during transcription: {e}", err=True)
-            raise click.Abort()
-
-        click.echo('Generating lecture content...')
-        generator = LectureGenerator()
-        try:
-            lecture_md = generator.generate_markdown(transcript, num_sections=sections)
-        except Exception as e:
-            click.echo(f"Error generating lecture: {e}", err=True)
-            raise click.Abort()
-        click.echo('Lecture generation completed.')
-
-        if output:
-            output_path = Path(output)
-            output_path.write_text(lecture_md, encoding='utf-8')
-            click.echo(f'Lecture saved to {output_path}')
-        else:
-            click.echo('\nGenerated Lecture:\n')
-            click.echo(lecture_md)
 
 @cli.command('extract-playlist-transcripts')
 @click.argument('youtube_url')
@@ -492,7 +436,7 @@ def playlist_to_md(subfolder: str) -> None:
         video_url = f"https://www.youtube.com/watch?v={video_id}"
         
         md_content += f"## {video_title}\n"
-        md_content += f"[video]({video_url})\n\n"
+        md_content += f"![video]({video_url})\n\n"
     
     # Save markdown file
     timestamp = time.strftime('%Y%m%d_%H%M%S')
@@ -516,141 +460,6 @@ def playlist_to_md(subfolder: str) -> None:
     click.echo(f'📄 Markdown file: {md_file}')
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! 📋')
-
-@cli.command('extract-playlist-links')
-@click.argument('playlist_url')
-@click.option('--subfolder', '-s', type=str, default=None,
-              help='Optional subfolder name within yt_links directory.')
-@click.option('--live-format', '-l', is_flag=True, default=False,
-              help='Use live embed format instead of regular video links.')
-def extract_playlist_links(playlist_url: str, subfolder: str, live_format: bool) -> None:
-    """
-    Extract all video links from a YouTube playlist and save to markdown.
-
-    PLAYLIST_URL is the YouTube playlist URL.
-    """
-    start_time = time.time()
-    
-    downloader = YouTubeDownloader()
-    
-    # Set up output directory structure
-    base_path = Path('outputs') / 'yt_links'
-    if subfolder:
-        output_path = base_path / subfolder
-    else:
-        output_path = base_path
-    output_path.mkdir(parents=True, exist_ok=True)
-    
-    click.echo('🔗 Starting playlist link extraction...')
-    click.echo(f'📁 Output directory: {output_path.absolute()}')
-    click.echo(f'🎬 Link format: {"Live embed" if live_format else "Regular video"}')
-    click.echo('─' * 60)
-    
-    # Progress callback for playlist extraction
-    def playlist_progress(message):
-        click.echo(f'📋 {message}')
-    
-    # Get playlist videos with metadata
-    try:
-        videos = downloader.get_playlist_videos(playlist_url, progress_callback=playlist_progress)
-        click.echo('─' * 60)
-        if not videos:
-            click.echo("❌ No videos found in playlist.")
-            return
-            
-        click.echo(f'✅ Found {len(videos)} videos')
-        
-    except Exception as e:
-        click.echo(f"❌ Error extracting playlist: {e}", err=True)
-        raise click.Abort()
-    
-    # Generate markdown content
-    click.echo('📝 Generating markdown file...')
-    
-    # Get playlist metadata
-    try:
-        ydl_opts = {
-            'quiet': True, 
-            'extract_flat': True, 
-            'no_warnings': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            },
-            'extractor_retries': 3,
-            'ignoreerrors': False,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            playlist_info = ydl.extract_info(playlist_url, download=False)
-            playlist_title = playlist_info.get('title', 'Unknown Playlist')
-            playlist_uploader = playlist_info.get('uploader', 'Unknown Channel')
-            playlist_description = playlist_info.get('description', 'No description available')
-    except:
-        playlist_title = 'YouTube Playlist'
-        playlist_uploader = 'Unknown Channel'
-        playlist_description = 'No description available'
-    
-    # Create markdown content
-    md_content = f"""# {playlist_title}
-
-## Playlist Information
-- **Channel:** {playlist_uploader}
-- **Total Videos:** {len(videos)}
-- **Extracted:** {time.strftime('%Y-%m-%d %H:%M:%S')}
-- **Link Format:** {"Live Embed" if live_format else "Regular Video Links"}
-- **Original URL:** {playlist_url}
-
-## Description
-{playlist_description[:500]}{"..." if len(playlist_description) > 500 else ""}
-
----
-
-## Video Links
-
-"""
-    
-    # Add video links
-    for idx, video in enumerate(videos, 1):
-        video_id = video['id']
-        video_title = video['title']
-        duration = video.get('duration_string', 'Unknown')
-        
-        if live_format:
-            # Live embed format
-            embed_url = f"https://youtube.com/embed/{video_id}"
-            md_content += f"{idx:02d}. **{video_title}** ({duration})  \n"
-            md_content += f"<liveUrl>{embed_url}</liveUrl>\n\n"
-        else:
-            # Regular video link format
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            md_content += f"{idx:02d}. **{video_title}** ({duration})  \n"
-            md_content += f"![lecture]({video_url})\n\n"
-    
-    # Add footer
-    md_content += f"""---
-
-**Generated by Course Ally** 🎓  
-*Extraction completed in {time.time() - start_time:.1f} seconds*
-"""
-    
-    # Save markdown file
-    timestamp = time.strftime('%Y%m%d_%H%M%S')
-    filename = f"playlist_links_{timestamp}.md"
-    md_file = output_path / filename
-    
-    md_file.write_text(md_content, encoding='utf-8')
-    
-    # Final summary
-    extraction_time = time.time() - start_time
-    click.echo('═' * 60)
-    click.echo('📊 EXTRACTION SUMMARY')
-    click.echo('═' * 60)
-    click.echo(f'📺 Playlist: {playlist_title}')
-    click.echo(f'🎬 Total videos: {len(videos)}')
-    click.echo(f'🔗 Link format: {"Live embed" if live_format else "Regular video"}')
-    click.echo(f'⏱️  Processing time: {extraction_time:.1f}s')
-    click.echo(f'📄 Markdown file: {md_file}')
-    click.echo(f'📁 Output location: {output_path.absolute()}')
-    click.echo(f'✨ All done! Happy organizing! 📋')
 
 @cli.command('create-chapters')
 @click.option('--output-dir', '-d', type=click.Path(), default='outputs/chapters',
