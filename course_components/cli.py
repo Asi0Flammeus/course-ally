@@ -762,8 +762,8 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
         except:
             click.echo("❌ Please enter a valid number")
     
-    # Get all chapter files in selected folder
-    all_files = list(selected_folder.glob('*_chapter.md'))
+    # Get all chapter files in selected folder and sort them alphabetically
+    all_files = sorted(list(selected_folder.glob('*_chapter.md')), key=lambda x: x.name)
     if not all_files:
         click.echo(f"❌ No chapter files found in {selected_folder.name}")
         raise click.Abort()

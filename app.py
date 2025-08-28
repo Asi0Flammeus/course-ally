@@ -450,12 +450,13 @@ def create_quiz():
                 send_progress(session_id, f"❌ Chapter folder not found: {chapter_folder}", "error", 100)
                 return
             
-            md_files = list(chapters_path.glob('*_chapter.md'))
+            # Sort chapter files alphabetically to maintain order
+            md_files = sorted(list(chapters_path.glob('*_chapter.md')), key=lambda x: x.name)
             if not md_files:
                 send_progress(session_id, "❌ No chapter files found", "error", 100)
                 return
             
-            send_progress(session_id, f"📄 Found {len(md_files)} chapter files", "processing", 20)
+            send_progress(session_id, f"📄 Found {len(md_files)} chapter files (processing in order)", "processing", 20)
             
             # Set up output directory
             base_path = Path('outputs') / 'quizz'
