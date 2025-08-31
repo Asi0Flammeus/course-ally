@@ -1552,6 +1552,9 @@
                         if (index === 0) step.classList.add('active');
                     });
                     
+                    // Load repository status immediately when quiz wizard opens
+                    loadRepositoryStatus();
+                    
                     // Reset navigation
                     document.getElementById('wizard-back').disabled = true;
                     document.getElementById('wizard-next').classList.remove('hidden');
@@ -1944,12 +1947,16 @@
                     const statusDot = card.querySelector('.status-dot');
                     const statusText = card.querySelector('.status-text');
                     
-                    if (data.repositories[repo]) {
+                    if (data.repositories && data.repositories[repo] && data.repositories[repo].available) {
                         statusDot.classList.add('available');
                         statusText.textContent = 'Available';
+                        card.style.opacity = '1';
+                        card.style.pointerEvents = 'auto';
                     } else {
                         statusDot.classList.add('error');
                         statusText.textContent = 'Unavailable';
+                        card.style.opacity = '0.6';
+                        card.style.pointerEvents = 'none';
                     }
                 });
             } catch (error) {
@@ -1961,11 +1968,21 @@
             const courseList = document.getElementById('course-list');
             courseList.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Loading courses...</span></div>';
             
+            console.log('Loading courses for repository:', quizWizardState.repository);
+            
             try {
-                const response = await fetch(`/api/quiz/courses?repo=${quizWizardState.repository}`);
+                const response = await fetch(`/api/quiz/courses?repo_key=${quizWizardState.repository}`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    console.error('Error loading courses:', error);
+                    courseList.innerHTML = `<div class="error-message">Error loading courses: ${error.error || 'Unknown error'}</div>`;
+                    return;
+                }
+                
                 const data = await response.json();
                 
-                if (data.courses.length === 0) {
+                if (!data.courses || data.courses.length === 0) {
                     courseList.innerHTML = '<div class="loading-placeholder"><span>No courses found</span></div>';
                     return;
                 }
@@ -1975,9 +1992,9 @@
                     const courseDiv = document.createElement('div');
                     courseDiv.className = 'course-item';
                     courseDiv.innerHTML = `
-                        <input type="checkbox" class="course-checkbox" data-course="${course.id}" id="course-${course.id}">
+                        <input type="checkbox" class="course-checkbox" data-course="${course.name}" id="course-${course.name}">
                         <div class="course-info">
-                            <h5>${course.title}</h5>
+                            <h5>${course.title || course.name}</h5>
                             <p>${course.description || 'No description available'}</p>
                             <div class="course-meta">
                                 <span>📚 ${course.chapters || 0} chapters</span>
@@ -2031,20 +2048,44 @@
         }
 
         async function loadLanguages() {
+            const languageSelect = document.getElementById('quiz-language');
+            
             try {
-                const response = await fetch(`/api/quiz/languages?repo=${quizWizardState.repository}&courses=${quizWizardState.courses.join(',')}`);
+                console.log('Loading languages for course:', quizWizardState.courses[0]);
+                const response = await fetch(`/api/quiz/languages?repo_key=${quizWizardState.repository}&course_name=${quizWizardState.courses[0]}`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    console.error('Error loading languages:', error);
+                    languageSelect.innerHTML = '<option value="en">English (en)</option>';
+                    quizWizardState.language = 'en';
+                    return;
+                }
+                
                 const data = await response.json();
                 
-                const languageSelect = document.getElementById('quiz-language');
                 languageSelect.innerHTML = '';
                 
-                data.languages.forEach(lang => {
+                if (!data.languages || data.languages.length === 0) {
+                    // Default to English if no languages found
                     const option = document.createElement('option');
-                    option.value = lang.code;
-                    option.textContent = `${lang.name} (${lang.code})`;
-                    if (lang.code === 'en') option.selected = true;
+                    option.value = 'en';
+                    option.textContent = 'English (en)';
+                    option.selected = true;
                     languageSelect.appendChild(option);
-                });
+                    quizWizardState.language = 'en';
+                } else {
+                    data.languages.forEach(lang => {
+                        const option = document.createElement('option');
+                        option.value = lang.code;
+                        option.textContent = `${lang.name} (${lang.code})`;
+                        if (lang.code === 'en') {
+                            option.selected = true;
+                            quizWizardState.language = 'en';
+                        }
+                        languageSelect.appendChild(option);
+                    });
+                }
                 
                 languageSelect.addEventListener('change', (e) => {
                     quizWizardState.language = e.target.value;
@@ -2052,6 +2093,8 @@
                 
             } catch (error) {
                 console.error('Error loading languages:', error);
+                languageSelect.innerHTML = '<option value="en">English (en)</option>';
+                quizWizardState.language = 'en';
             }
         }
 
@@ -2077,9 +2120,24 @@
             const chapterList = document.getElementById('chapter-list');
             chapterList.innerHTML = '<div class="loading-placeholder"><div class="spinner"></div><span>Loading chapters...</span></div>';
             
+            console.log('Loading chapters for:', {
+                repo: quizWizardState.repository,
+                course: quizWizardState.courses[0],
+                language: quizWizardState.language
+            });
+            
             try {
-                const response = await fetch(`/api/quiz/chapters?repo=${quizWizardState.repository}&courses=${quizWizardState.courses.join(',')}&language=${quizWizardState.language}`);
+                const response = await fetch(`/api/quiz/chapters?repo_key=${quizWizardState.repository}&course_name=${quizWizardState.courses[0]}&language=${quizWizardState.language}`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    console.error('Error loading chapters:', error);
+                    chapterList.innerHTML = `<div class="error-message">Error loading chapters: ${error.error || 'Unknown error'}</div>`;
+                    return;
+                }
+                
                 const data = await response.json();
+                console.log('Chapters loaded:', data.chapters);
                 
                 if (data.chapters.length === 0) {
                     chapterList.innerHTML = '<div class="loading-placeholder"><span>No chapters found</span></div>';
@@ -2087,11 +2145,12 @@
                 }
                 
                 chapterList.innerHTML = '';
-                data.chapters.forEach(chapter => {
+                data.chapters.forEach((chapter, index) => {
                     const chapterDiv = document.createElement('div');
                     chapterDiv.className = 'chapter-item';
+                    const chapterId = chapter.chapter_id || chapter.id || `chapter-${index}`;
                     chapterDiv.innerHTML = `
-                        <input type="checkbox" class="chapter-checkbox" data-chapter="${chapter.id}" id="chapter-${chapter.id}">
+                        <input type="checkbox" class="chapter-checkbox" data-chapter="${chapterId}" id="chapter-${chapterId}">
                         <div class="chapter-title">${chapter.title}</div>
                     `;
                     

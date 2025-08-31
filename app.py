@@ -478,7 +478,7 @@ def create_quiz():
                     send_progress(session_id, f"📖 Processing course: {course}", "processing", course_progress_base)
                     
                     # Get chapters for the course
-                    course_chapters = workflow_manager.get_chapters(repository, course, language)
+                    course_chapters = workflow_manager.list_chapters(repository, course, language)
                     
                     if not course_chapters:
                         send_progress(session_id, f"⚠️ No chapters found for {course}", "warning", course_progress_base + 5)
@@ -486,31 +486,48 @@ def create_quiz():
                     
                     # Filter chapters if specific ones requested
                     if chapters != 'all' and isinstance(chapters, list):
-                        course_chapters = [ch for ch in course_chapters if ch['id'] in chapters]
+                        course_chapters = [ch for ch in course_chapters if ch['chapter_id'] in chapters]
                     
                     send_progress(session_id, f"📝 Found {len(course_chapters)} chapters in {course}", "processing", course_progress_base + 10)
                     
-                    # Generate questions for each chapter
-                    for ch_idx, chapter in enumerate(course_chapters):
-                        chapter_progress = course_progress_base + 10 + (ch_idx * 70 / len(courses) / len(course_chapters))
+                    # Extract chapter IDs for quiz generation
+                    chapter_ids = [ch['chapter_id'] for ch in course_chapters]
+                    
+                    # Calculate total questions per chapter based on difficulty
+                    questions_per_chapter = sum(difficulty.values())
+                    
+                    # Generate quiz using the workflow manager
+                    try:
+                        # Create progress callback
+                        def quiz_progress(msg):
+                            nonlocal total_questions_generated
+                            if 'Generated' in msg.get('message', ''):
+                                total_questions_generated += 1
+                            send_progress(session_id, msg.get('message', ''), 
+                                        msg.get('status', 'processing'), 
+                                        course_progress_base + 20 + (course_idx * 60 / len(courses)))
                         
-                        if active_processes.get(session_id, {}).get('cancelled', False):
-                            send_progress(session_id, "🛑 Process cancelled", "error", 100)
-                            return
-                        
-                        send_progress(session_id, f"🎯 Generating questions for: {chapter['title'][:50]}...", "processing", chapter_progress)
-                        
-                        # Generate questions with specified difficulty
-                        questions = workflow_manager.generate_questions_for_chapter(
-                            repository, course, chapter['id'], 
-                            difficulty, language
-                        )
-                        
-                        if questions:
-                            total_questions_generated += len(questions)
-                            send_progress(session_id, f"✅ Generated {len(questions)} questions for chapter", "processing", chapter_progress + 5)
-                        else:
-                            send_progress(session_id, f"⚠️ Failed to generate questions for chapter", "warning", chapter_progress + 5)
+                        # Generate quiz for all chapters in this course
+                        for progress_update in workflow_manager.generate_quiz(
+                            repo_key=repository,
+                            course_name=course,
+                            chapter_ids=chapter_ids,
+                            language=language,
+                            question_count=questions_per_chapter,
+                            difficulty_proportions={
+                                'easy': difficulty['easy'] / questions_per_chapter,
+                                'intermediate': difficulty['intermediate'] / questions_per_chapter,
+                                'hard': difficulty['hard'] / questions_per_chapter
+                            },
+                            author=author,
+                            contributors=contributors,
+                            progress_callback=quiz_progress
+                        ):
+                            if active_processes.get(session_id, {}).get('cancelled', False):
+                                send_progress(session_id, "🛑 Process cancelled", "error", 100)
+                                return
+                    except Exception as e:
+                        send_progress(session_id, f"⚠️ Error generating quiz for {course}: {str(e)}", "warning", course_progress_base + 80)
                 
                 send_progress(session_id, f"🎉 Quiz generation complete! Generated {total_questions_generated} questions", "success", 100)
                 
@@ -633,19 +650,26 @@ def quiz_list_repos():
         workflow_manager = QuizWorkflowManager()
         repositories = workflow_manager.list_repositories()
         
+        # Create a dictionary indexed by repo key for frontend compatibility
+        repo_dict = {}
         repo_data = []
+        
         for repo in repositories:
-            repo_data.append({
+            repo_info = {
                 'key': repo.key,
                 'name': repo.name,
                 'path': str(repo.path),
                 'configured': repo.configured,
                 'exists': repo.exists,
-                'valid': repo.valid
-            })
+                'valid': repo.valid,
+                'available': repo.valid  # Add 'available' field for frontend
+            }
+            repo_data.append(repo_info)
+            repo_dict[repo.key] = repo_info
         
         return jsonify({
-            'repositories': repo_data,
+            'repositories': repo_dict,  # Dictionary for easy lookup
+            'repositoryList': repo_data,  # Array for iteration
             'total': len(repo_data),
             'valid': len([r for r in repo_data if r['valid']])
         })
@@ -706,7 +730,46 @@ def quiz_list_languages():
     
     try:
         workflow_manager = QuizWorkflowManager()
-        languages = workflow_manager.list_languages(repo_key, course_name)
+        language_codes = workflow_manager.list_languages(repo_key, course_name)
+        
+        # Map language codes to full names
+        language_names = {
+            'en': 'English',
+            'es': 'Spanish',
+            'fr': 'French',
+            'de': 'German',
+            'it': 'Italian',
+            'pt': 'Portuguese',
+            'ru': 'Russian',
+            'ja': 'Japanese',
+            'ko': 'Korean',
+            'zh': 'Chinese',
+            'zh-Hans': 'Chinese (Simplified)',
+            'zh-Hant': 'Chinese (Traditional)',
+            'ar': 'Arabic',
+            'hi': 'Hindi',
+            'cs': 'Czech',
+            'nl': 'Dutch',
+            'pl': 'Polish',
+            'sv': 'Swedish',
+            'fi': 'Finnish',
+            'et': 'Estonian',
+            'id': 'Indonesian',
+            'vi': 'Vietnamese',
+            'fa': 'Persian',
+            'sw': 'Swahili',
+            'sr-Latn': 'Serbian (Latin)',
+            'nb-NO': 'Norwegian',
+            'rn': 'Kirundi'
+        }
+        
+        # Format languages as objects with code and name
+        languages = []
+        for code in language_codes:
+            languages.append({
+                'code': code,
+                'name': language_names.get(code, code.upper())
+            })
         
         return jsonify({
             'languages': languages,

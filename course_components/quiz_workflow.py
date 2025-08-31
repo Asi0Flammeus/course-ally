@@ -94,28 +94,48 @@ class QuizWorkflowManager:
         env_path = os.getenv(repo_info['env_var'])
         
         if env_path:
+            # Handle both absolute and relative paths
             path = Path(env_path)
+            if not path.is_absolute():
+                # If relative, make it relative to the current working directory
+                path = Path.cwd() / path
         else:
-            path = Path(repo_info['default_path'])
+            # Use default path (relative to current directory)
+            path = Path.cwd() / repo_info['default_path']
             
-        return path if path.exists() else None
+        # Check if path exists and has courses directory
+        if path.exists() and (path / 'courses').exists():
+            return path
+        return None
     
     def list_repositories(self) -> List[RepositoryInfo]:
         """List available repositories with their status"""
         repos = []
         
         for repo_key, repo_config in self.repositories.items():
+            # Get environment variable value
+            env_path = os.getenv(repo_config['env_var'])
+            configured = bool(env_path)
+            
+            # Get actual repository path
             path = self._get_repo_path(repo_key)
-            configured = bool(os.getenv(repo_config['env_var']))
-            exists = path is not None and path.exists()
+            
+            # Determine display path
+            if env_path:
+                display_path = Path(env_path)
+            else:
+                display_path = Path(repo_config['default_path'])
+            
+            # Check if repository is valid (exists and has courses)
+            valid = path is not None
             
             repos.append(RepositoryInfo(
                 key=repo_key,
                 name=repo_config['name'],
-                path=path or Path(repo_config['default_path']),
+                path=display_path,
                 configured=configured,
-                exists=exists,
-                valid=exists and path.is_dir()
+                exists=valid,  # If path is not None, it exists and has courses
+                valid=valid
             ))
             
         return repos
@@ -149,10 +169,19 @@ class QuizWorkflowManager:
                     with open(course_yml, 'r', encoding='utf-8') as f:
                         metadata = yaml.safe_load(f) or {}
                     
+                    # Use uppercase course name as title if no title in metadata
+                    title = metadata.get('title', course_dir.name.upper())
+                    
+                    # Get topic and level for description
+                    topic = metadata.get('topic', 'general')
+                    level = metadata.get('level', 'unknown')
+                    hours = metadata.get('hours', 'N/A')
+                    description = metadata.get('description', f'{topic.capitalize()} course - {level} level - {hours} hours')
+                    
                     courses.append({
                         'name': course_dir.name,
-                        'title': metadata.get('title', course_dir.name),
-                        'description': metadata.get('description', ''),
+                        'title': title,
+                        'description': description,
                         'path': str(course_dir),
                         'languages': metadata.get('languages', ['en']),
                         'metadata': metadata
@@ -186,31 +215,29 @@ class QuizWorkflowManager:
         if not repo_path:
             return []
             
-        # Construct course path
-        if language == 'en':
-            course_path = repo_path / 'courses' / course_name
-        else:
-            course_path = repo_path / 'courses' / course_name / language
-            
-        if not course_path.exists():
-            return []
+        # The language file is in the course folder: courses/{course_name}/{language}.md
+        course_path = repo_path / 'courses' / course_name
+        language_file = course_path / f'{language}.md'
+        
+        if not language_file.exists():
+            # Fallback to English if requested language doesn't exist
+            language_file = course_path / 'en.md'
+            if not language_file.exists():
+                return []
             
         chapters = []
         
-        # Look for markdown files
-        for md_file in course_path.glob('*.md'):
-            try:
-                content = md_file.read_text(encoding='utf-8')
-                extracted_chapters = self._extract_chapters_from_content(content, md_file)
-                chapters.extend(extracted_chapters)
-            except Exception as e:
-                # Skip files that can't be read
-                continue
+        try:
+            content = language_file.read_text(encoding='utf-8')
+            chapters = self._extract_chapters_from_content(content, language_file)
+        except Exception as e:
+            print(f"Error reading {language_file}: {e}")
+            return []
                 
         return sorted(chapters, key=lambda x: x.get('order', 999))
     
     def list_languages(self, repo_key: str, course_name: str) -> List[str]:
-        """List available languages for a course"""
+        """List available languages for a course - based on {lang}.md files"""
         repo_path = self._get_repo_path(repo_key)
         if not repo_path:
             return ['en']
@@ -219,54 +246,52 @@ class QuizWorkflowManager:
         if not course_path.exists():
             return ['en']
             
-        languages = ['en']  # English is always available
+        languages = []
         
-        # Check for language subdirectories
-        for item in course_path.iterdir():
-            if item.is_dir() and item.name in self.SUPPORTED_LANGUAGES:
-                if item.name != 'en':  # Don't duplicate English
-                    languages.append(item.name)
+        # Look for markdown files with language codes
+        for md_file in course_path.glob('*.md'):
+            # Extract language code from filename (e.g., 'en.md' -> 'en')
+            lang_code = md_file.stem
+            
+            # Check if it's a valid language code (2-10 characters)
+            # This allows codes like 'en', 'zh-Hans', 'nb-NO', 'sr-Latn'
+            # Basic validation: starts with letter, contains only letters, hyphens, underscores
+            if lang_code and (2 <= len(lang_code) <= 10) and lang_code[0].isalpha():
+                languages.append(lang_code)
+        
+        # If no languages found, default to English
+        if not languages:
+            languages = ['en']
                     
         return sorted(languages)
     
     def _extract_chapters_from_content(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
         """Extract chapters from markdown content"""
         chapters = []
+        lines = content.split('\n')
         
-        # Regex to match: ## Chapter Title\n\n<chapterId>id</chapterId>
-        chapter_pattern = r'## (.+?)\n\n<chapterId>(.+?)</chapterId>'
-        matches = re.finditer(chapter_pattern, content, re.DOTALL)
+        # Find all ## headings and look for chapterId within the next few lines
+        for i, line in enumerate(lines):
+            if line.startswith('## '):
+                title = line[3:].strip()  # Remove '## ' prefix
+                chapter_id = None
+                
+                # Look for <chapterId> within the next 5 lines
+                for j in range(i + 1, min(i + 6, len(lines))):
+                    if '<chapterId>' in lines[j] and '</chapterId>' in lines[j]:
+                        # Extract chapter ID from the line
+                        start = lines[j].find('<chapterId>') + len('<chapterId>')
+                        end = lines[j].find('</chapterId>')
+                        chapter_id = lines[j][start:end].strip()
+                        break
+                
+                if chapter_id:
+                    chapters.append({
+                        'title': title,
+                        'chapter_id': chapter_id,
+                        'order': len(chapters)
+                    })
         
-        order = 0
-        for match in matches:
-            title = match.group(1).strip()
-            chapter_id = match.group(2).strip()
-            
-            # Extract content for this chapter (from current match to next chapter or end)
-            start_pos = match.start()
-            next_match = None
-            
-            # Find next chapter
-            remaining_content = content[match.end():]
-            next_chapter = re.search(chapter_pattern, remaining_content)
-            
-            if next_chapter:
-                end_pos = match.end() + next_chapter.start()
-                chapter_content = content[start_pos:end_pos].strip()
-            else:
-                chapter_content = content[start_pos:].strip()
-            
-            chapters.append({
-                'title': title,
-                'chapter_id': chapter_id,
-                'content': chapter_content,
-                'file_path': str(file_path),
-                'order': order,
-                'word_count': len(chapter_content.split()),
-                'has_content': len(chapter_content.strip()) > 100  # Minimum content check
-            })
-            order += 1
-            
         return chapters
     
     def _initialize_quiz_generator(self, author: str = 'Course Ally', contributors: List[str] = None) -> QuizGenerator:

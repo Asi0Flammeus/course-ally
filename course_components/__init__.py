@@ -6,9 +6,17 @@ including downloading YouTube audio, transcribing audio, and generating
 lecture content in markdown format.
 """
 
-# Import main components
-from .downloader import YouTubeDownloader
-from .transcription import TranscriptionService
+# Import main components with error handling for optional dependencies
+try:
+    from .downloader import YouTubeDownloader
+except ImportError:
+    YouTubeDownloader = None
+
+try:
+    from .transcription import TranscriptionService
+except ImportError:
+    TranscriptionService = None
+
 from .chapter_generator import ChapterGenerator
 from .quiz_generator import QuizGenerator
 from .quiz_workflow import QuizWorkflowManager
