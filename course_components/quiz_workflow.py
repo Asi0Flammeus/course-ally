@@ -266,11 +266,12 @@ class QuizWorkflowManager:
         return sorted(languages)
     
     def _extract_chapters_from_content(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
-        """Extract chapters from markdown content"""
+        """Extract chapters from markdown content with full chapter text"""
         chapters = []
         lines = content.split('\n')
         
         # Find all ## headings and look for chapterId within the next few lines
+        chapter_starts = []
         for i, line in enumerate(lines):
             if line.startswith('## '):
                 title = line[3:].strip()  # Remove '## ' prefix
@@ -286,11 +287,38 @@ class QuizWorkflowManager:
                         break
                 
                 if chapter_id:
-                    chapters.append({
+                    chapter_starts.append({
                         'title': title,
                         'chapter_id': chapter_id,
-                        'order': len(chapters)
+                        'order': len(chapter_starts),
+                        'line_start': i
                     })
+        
+        # Extract content for each chapter
+        for idx, chapter_info in enumerate(chapter_starts):
+            # Determine where this chapter's content ends
+            start_line = chapter_info['line_start']
+            
+            # Find the end line (start of next chapter or end of file)
+            if idx + 1 < len(chapter_starts):
+                end_line = chapter_starts[idx + 1]['line_start']
+            else:
+                end_line = len(lines)
+            
+            # Extract chapter content
+            chapter_lines = lines[start_line:end_line]
+            chapter_content = '\n'.join(chapter_lines).strip()
+            
+            # Only include chapters with meaningful content
+            if len(chapter_content) > 100:  # Minimum content length
+                chapters.append({
+                    'title': chapter_info['title'],
+                    'chapter_id': chapter_info['chapter_id'],
+                    'order': chapter_info['order'],
+                    'content': chapter_content,
+                    'file_path': file_path,
+                    'word_count': len(chapter_content.split())
+                })
         
         return chapters
     
@@ -337,6 +365,63 @@ class QuizWorkflowManager:
         difficulties.extend(['hard'] * hard_count)
         
         return difficulties[:question_count]
+    
+    def _load_existing_questions_from_repo(self, repo_key: str, course_name: str, chapter_id: str) -> List[Dict[str, Any]]:
+        """Load existing quiz questions from repository quiz folders"""
+        repo_path = self._get_repo_path(repo_key)
+        if not repo_path:
+            return []
+            
+        # Look for quiz files in the course directory
+        # Structure: courses/{course_name}/quizz/{quiz_number}/question.yml and en.yml
+        quizz_path = repo_path / 'courses' / course_name / 'quizz'
+        
+        if not quizz_path.exists():
+            return []
+        
+        existing_questions = []
+        
+        # Iterate through quiz directories (001, 002, etc.)
+        for quiz_dir in sorted(quizz_path.iterdir()):
+            if not quiz_dir.is_dir() or not quiz_dir.name.isdigit():
+                continue
+                
+            question_yml = quiz_dir / 'question.yml'
+            en_yml = quiz_dir / 'en.yml'
+            
+            if not question_yml.exists() or not en_yml.exists():
+                continue
+                
+            try:
+                # Load metadata
+                with open(question_yml, 'r', encoding='utf-8') as f:
+                    metadata = yaml.safe_load(f) or {}
+                    
+                # Load question content
+                with open(en_yml, 'r', encoding='utf-8') as f:
+                    content = yaml.safe_load(f) or {}
+                
+                # Check if this question belongs to the requested chapter
+                if metadata.get('chapterId') == chapter_id:
+                    question_data = {
+                        'id': metadata.get('id', str(uuid.uuid4())),
+                        'chapter_id': chapter_id,
+                        'difficulty': metadata.get('difficulty', 'intermediate'),
+                        'duration': metadata.get('duration', 30),
+                        'question': content.get('question', ''),
+                        'answer': content.get('answer', ''),
+                        'wrong_answers': content.get('wrong_answers', []),
+                        'explanation': content.get('explanation', ''),
+                        'source': 'existing_repo'
+                    }
+                    existing_questions.append(question_data)
+                    
+            except Exception as e:
+                # Skip malformed quiz files
+                print(f"Warning: Could not load quiz from {quiz_dir}: {e}")
+                continue
+        
+        return existing_questions
     
     def generate_quiz(
         self,
@@ -392,6 +477,23 @@ class QuizWorkflowManager:
                 yield {"status": "error", "message": error_msg, "percentage": 100}
                 return
                 
+            # Check if chapters have content - if not, this indicates we need different approach
+            chapters_with_content = [ch for ch in selected_chapters if ch.get('content') and len(ch['content']) > 100]
+            
+            if not chapters_with_content:
+                # Fallback: try to generate from existing quiz files only
+                if progress_callback:
+                    progress_callback("No chapter content available - using existing quiz files only", "processing", 25)
+                yield {
+                    "status": "processing", 
+                    "message": "No chapter content available - using existing quiz files only", 
+                    "percentage": 25,
+                    "data": {"fallback_mode": True}
+                }
+                selected_chapters = selected_chapters  # Use chapters without content for existing quiz loading
+            else:
+                selected_chapters = chapters_with_content
+                
             if progress_callback:
                 progress_callback(f"Found {len(selected_chapters)} chapters", "processing", 20)
             yield {
@@ -446,13 +548,69 @@ class QuizWorkflowManager:
                 else:
                     chapter_question_count = min(questions_per_chapter, remaining_questions)
                 
-                # Generate questions for this chapter
+                # First, try to load existing questions from the repository
+                existing_questions = self._load_existing_questions_from_repo(
+                    repo_key, course_name, chapter['chapter_id']
+                )
+                
+                # Filter existing questions by difficulty if available
                 chapter_difficulties = difficulties[len(all_questions):len(all_questions) + chapter_question_count]
                 
-                for q_idx, difficulty in enumerate(chapter_difficulties):
+                # Use existing questions first, then generate new ones if needed
+                questions_added_from_existing = 0
+                for difficulty in chapter_difficulties:
+                    # Try to find an existing question with this difficulty
+                    existing_q = next(
+                        (q for q in existing_questions 
+                         if q['difficulty'] == difficulty 
+                         and q not in [eq for eq in all_questions if eq.get('source') == 'existing_repo']),
+                        None
+                    )
+                    
+                    if existing_q:
+                        # Use existing question
+                        enhanced_question = {
+                            **existing_q,
+                            'chapter_title': chapter['title'],
+                            'question_number': len(all_questions) + 1,
+                            'generated_at': datetime.now().isoformat(),
+                            'source': 'existing_repo'
+                        }
+                        all_questions.append(enhanced_question)
+                        questions_added_from_existing += 1
+                        
+                        question_percentage = chapter_start_percentage + (len(all_questions) / chapter_question_count) * (chapter_end_percentage - chapter_start_percentage)
+                        if progress_callback:
+                            progress_callback(f"Used existing question {len(all_questions)}/{question_count}", "processing", question_percentage)
+                        yield {
+                            "status": "processing",
+                            "message": f"Used existing question {len(all_questions)}/{question_count}",
+                            "percentage": question_percentage,
+                            "data": {"questions_generated": len(all_questions), "source": "existing"}
+                        }
+                
+                # Generate new questions for remaining difficulties
+                remaining_difficulties = chapter_difficulties[questions_added_from_existing:]
+                
+                for q_idx, difficulty in enumerate(remaining_difficulties):
                     question_percentage = chapter_start_percentage + (q_idx / len(chapter_difficulties)) * (chapter_end_percentage - chapter_start_percentage)
                     
                     try:
+                        # Check if we have chapter content for generation
+                        has_content = 'content' in chapter and chapter['content'] and len(chapter['content']) > 100
+                        
+                        if not has_content:
+                            # Skip generation but continue with existing questions if available
+                            if len(existing_questions) == 0:
+                                if progress_callback:
+                                    progress_callback(f"Skipping chapter {chapter['title']} - no content or existing questions", "warning", question_percentage)
+                                yield {
+                                    "status": "warning",
+                                    "message": f"Skipping chapter {chapter['title']} - no content or existing questions",
+                                    "percentage": question_percentage
+                                }
+                            continue
+                            
                         question_data = generator._generate_quiz_with_claude(
                             chapter['content'],
                             chapter['title'], 
@@ -470,7 +628,8 @@ class QuizWorkflowManager:
                                 'difficulty': difficulty,
                                 'question_number': len(all_questions) + 1,
                                 'duration': generator._get_duration_for_difficulty(difficulty),
-                                'generated_at': datetime.now().isoformat()
+                                'generated_at': datetime.now().isoformat(),
+                                'source': 'generated'
                             }
                             
                             all_questions.append(enhanced_question)
