@@ -266,16 +266,16 @@ class QuizWorkflowManager:
         return sorted(languages)
     
     def _extract_chapters_from_content(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
-        """Extract chapters from markdown content with full chapter text"""
+        """Extract chapters from markdown content - content is from <chapterId> line to next ##"""
         chapters = []
         lines = content.split('\n')
         
         # Find all ## headings and look for chapterId within the next few lines
-        chapter_starts = []
         for i, line in enumerate(lines):
             if line.startswith('## '):
                 title = line[3:].strip()  # Remove '## ' prefix
                 chapter_id = None
+                chapter_id_line = None
                 
                 # Look for <chapterId> within the next 5 lines
                 for j in range(i + 1, min(i + 6, len(lines))):
@@ -284,41 +284,32 @@ class QuizWorkflowManager:
                         start = lines[j].find('<chapterId>') + len('<chapterId>')
                         end = lines[j].find('</chapterId>')
                         chapter_id = lines[j][start:end].strip()
+                        chapter_id_line = j
                         break
                 
-                if chapter_id:
-                    chapter_starts.append({
+                if chapter_id and chapter_id_line:
+                    # Find where this chapter's content ends (next ## or end of file)
+                    content_start = chapter_id_line  # Start from the chapterId line
+                    content_end = len(lines)  # Default to end of file
+                    
+                    # Look for the next ## heading
+                    for k in range(chapter_id_line + 1, len(lines)):
+                        if lines[k].startswith('## '):
+                            content_end = k
+                            break
+                    
+                    # Extract chapter content (from chapterId line to next ##)
+                    chapter_lines = lines[content_start:content_end]
+                    chapter_content = '\n'.join(chapter_lines).strip()
+                    
+                    chapters.append({
                         'title': title,
                         'chapter_id': chapter_id,
-                        'order': len(chapter_starts),
-                        'line_start': i
+                        'order': len(chapters),
+                        'content': chapter_content,
+                        'file_path': str(file_path) if file_path else None,
+                        'word_count': len(chapter_content.split())
                     })
-        
-        # Extract content for each chapter
-        for idx, chapter_info in enumerate(chapter_starts):
-            # Determine where this chapter's content ends
-            start_line = chapter_info['line_start']
-            
-            # Find the end line (start of next chapter or end of file)
-            if idx + 1 < len(chapter_starts):
-                end_line = chapter_starts[idx + 1]['line_start']
-            else:
-                end_line = len(lines)
-            
-            # Extract chapter content
-            chapter_lines = lines[start_line:end_line]
-            chapter_content = '\n'.join(chapter_lines).strip()
-            
-            # Only include chapters with meaningful content
-            if len(chapter_content) > 100:  # Minimum content length
-                chapters.append({
-                    'title': chapter_info['title'],
-                    'chapter_id': chapter_info['chapter_id'],
-                    'order': chapter_info['order'],
-                    'content': chapter_content,
-                    'file_path': file_path,
-                    'word_count': len(chapter_content.split())
-                })
         
         return chapters
     
@@ -366,62 +357,70 @@ class QuizWorkflowManager:
         
         return difficulties[:question_count]
     
-    def _load_existing_questions_from_repo(self, repo_key: str, course_name: str, chapter_id: str) -> List[Dict[str, Any]]:
-        """Load existing quiz questions from repository quiz folders"""
+    def _get_next_quiz_number(self, repo_key: str, course_name: str) -> str:
+        """Get the next available 3-digit quiz folder number"""
         repo_path = self._get_repo_path(repo_key)
         if not repo_path:
-            return []
+            return "001"
             
-        # Look for quiz files in the course directory
-        # Structure: courses/{course_name}/quizz/{quiz_number}/question.yml and en.yml
         quizz_path = repo_path / 'courses' / course_name / 'quizz'
         
         if not quizz_path.exists():
-            return []
+            return "001"
         
-        existing_questions = []
+        # Find existing numbered folders
+        existing_numbers = []
+        for item in quizz_path.iterdir():
+            if item.is_dir() and item.name.isdigit() and len(item.name) == 3:
+                existing_numbers.append(int(item.name))
         
-        # Iterate through quiz directories (001, 002, etc.)
-        for quiz_dir in sorted(quizz_path.iterdir()):
-            if not quiz_dir.is_dir() or not quiz_dir.name.isdigit():
-                continue
-                
-            question_yml = quiz_dir / 'question.yml'
-            en_yml = quiz_dir / 'en.yml'
-            
-            if not question_yml.exists() or not en_yml.exists():
-                continue
-                
-            try:
-                # Load metadata
-                with open(question_yml, 'r', encoding='utf-8') as f:
-                    metadata = yaml.safe_load(f) or {}
-                    
-                # Load question content
-                with open(en_yml, 'r', encoding='utf-8') as f:
-                    content = yaml.safe_load(f) or {}
-                
-                # Check if this question belongs to the requested chapter
-                if metadata.get('chapterId') == chapter_id:
-                    question_data = {
-                        'id': metadata.get('id', str(uuid.uuid4())),
-                        'chapter_id': chapter_id,
-                        'difficulty': metadata.get('difficulty', 'intermediate'),
-                        'duration': metadata.get('duration', 30),
-                        'question': content.get('question', ''),
-                        'answer': content.get('answer', ''),
-                        'wrong_answers': content.get('wrong_answers', []),
-                        'explanation': content.get('explanation', ''),
-                        'source': 'existing_repo'
-                    }
-                    existing_questions.append(question_data)
-                    
-            except Exception as e:
-                # Skip malformed quiz files
-                print(f"Warning: Could not load quiz from {quiz_dir}: {e}")
-                continue
+        if not existing_numbers:
+            return "001"
         
-        return existing_questions
+        # Return the next number after the highest existing one
+        next_num = max(existing_numbers) + 1
+        return f"{next_num:03d}"
+    
+    def _save_quiz_question(self, repo_key: str, course_name: str, question_data: Dict[str, Any], language: str = 'en') -> str:
+        """Save a quiz question to the repository structure"""
+        repo_path = self._get_repo_path(repo_key)
+        if not repo_path:
+            raise ValueError(f"Repository {repo_key} not found")
+        
+        # Create quizz directory if it doesn't exist
+        quizz_path = repo_path / 'courses' / course_name / 'quizz'
+        quizz_path.mkdir(parents=True, exist_ok=True)
+        
+        # Get the next available folder number
+        folder_num = self._get_next_quiz_number(repo_key, course_name)
+        question_dir = quizz_path / folder_num
+        question_dir.mkdir(exist_ok=True)
+        
+        # Prepare metadata (question.yml)
+        metadata = {
+            'id': question_data.get('id', str(uuid.uuid4())),
+            'chapterId': question_data.get('chapter_id'),
+            'difficulty': question_data.get('difficulty', 'intermediate'),
+            'duration': question_data.get('duration', 30),
+            'author': question_data.get('author', 'Course Ally')
+        }
+        
+        # Prepare content ({language}.yml)
+        content = {
+            'question': question_data.get('question', ''),
+            'answer': question_data.get('answer', ''),
+            'wrong_answers': question_data.get('wrong_answers', []),
+            'explanation': question_data.get('explanation', '')
+        }
+        
+        # Save files
+        with open(question_dir / 'question.yml', 'w', encoding='utf-8') as f:
+            yaml.dump(metadata, f, allow_unicode=True, default_flow_style=False)
+        
+        with open(question_dir / f'{language}.yml', 'w', encoding='utf-8') as f:
+            yaml.dump(content, f, allow_unicode=True, default_flow_style=False)
+        
+        return folder_num
     
     def generate_quiz(
         self,
@@ -698,17 +697,51 @@ class QuizWorkflowManager:
             }
             
             if progress_callback:
-                progress_callback("Saving quiz files...", "processing", 90)
-            yield {"status": "processing", "message": "Saving quiz files...", "percentage": 90}
+                progress_callback("Saving quiz questions to repository...", "processing", 90)
+            yield {"status": "processing", "message": "Saving quiz questions to repository...", "percentage": 90}
             
-            # Save quiz files
-            output_path = self._save_quiz_files(
-                quiz_metadata=quiz_metadata,
-                questions=all_questions,
-                repo_key=repo_key,
-                course_name=course_name,
-                language=language
-            )
+            # Save each question to the repository's quizz folder
+            saved_count = 0
+            saved_folders = []
+            for question in all_questions:
+                try:
+                    folder_num = self._save_quiz_question(
+                        repo_key=repo_key,
+                        course_name=course_name,
+                        question_data={
+                            'id': question.get('id', str(uuid.uuid4())),
+                            'chapter_id': question.get('chapter_id'),
+                            'difficulty': question.get('difficulty'),
+                            'duration': question.get('duration', 30),
+                            'author': author,
+                            'question': question.get('question', ''),
+                            'answer': question.get('answer', ''),
+                            'wrong_answers': question.get('wrong_answers', []),
+                            'explanation': question.get('explanation', '')
+                        },
+                        language=language
+                    )
+                    saved_count += 1
+                    saved_folders.append(folder_num)
+                    
+                    if progress_callback:
+                        save_percentage = 90 + (saved_count / len(all_questions)) * 8
+                        progress_callback(f"Saved question {saved_count}/{len(all_questions)} to folder {folder_num}", "processing", save_percentage)
+                    yield {
+                        "status": "processing",
+                        "message": f"Saved question {saved_count}/{len(all_questions)} to folder {folder_num}",
+                        "percentage": 90 + (saved_count / len(all_questions)) * 8,
+                        "data": {"saved_to": folder_num}
+                    }
+                except Exception as e:
+                    error_msg = f"Error saving question: {str(e)}"
+                    if progress_callback:
+                        progress_callback(error_msg, "warning", 95)
+                    yield {
+                        "status": "warning",
+                        "message": error_msg,
+                        "percentage": 95
+                    }
             
             success_msg = f"Successfully generated {len(all_questions)} questions"
             if progress_callback:
@@ -720,11 +753,8 @@ class QuizWorkflowManager:
                 "data": {
                     "quiz_metadata": quiz_metadata,
                     "questions_generated": len(all_questions),
-                    "output_path": str(output_path),
-                    "files_created": [
-                        str(output_path / f"{course_name}_quiz_metadata.yml"),
-                        str(output_path / f"{course_name}_quiz_questions.yml")
-                    ]
+                    "saved_folders": saved_folders,
+                    "repository_path": str(self._get_repo_path(repo_key) / 'courses' / course_name / 'quizz')
                 }
             }
             
@@ -734,31 +764,3 @@ class QuizWorkflowManager:
                 progress_callback(error_msg, "error", 100)
             yield {"status": "error", "message": error_msg, "percentage": 100}
     
-    def _save_quiz_files(
-        self,
-        quiz_metadata: Dict[str, Any],
-        questions: List[Dict[str, Any]],
-        repo_key: str,
-        course_name: str,
-        language: str
-    ) -> Path:
-        """Save quiz files in the proper directory structure"""
-        
-        # Create output directory structure
-        base_path = Path('outputs') / 'quizz' / repo_key.lower() / course_name
-        if language != 'en':
-            base_path = base_path / language
-            
-        base_path.mkdir(parents=True, exist_ok=True)
-        
-        # Save metadata file
-        metadata_file = base_path / f"{course_name}_quiz_metadata.yml"
-        with open(metadata_file, 'w', encoding='utf-8') as f:
-            yaml.dump(quiz_metadata, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        
-        # Save questions file
-        questions_file = base_path / f"{course_name}_quiz_questions.yml"
-        with open(questions_file, 'w', encoding='utf-8') as f:
-            yaml.dump({'questions': questions}, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        
-        return base_path
