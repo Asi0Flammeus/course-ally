@@ -459,8 +459,10 @@ def create_quiz():
                 
                 # Set author and contributors
                 workflow_manager.author = author
+                contributors = []
                 if contributors_str:
-                    workflow_manager.contributors = [name.strip() for name in contributors_str.split(',') if name.strip()]
+                    contributors = [name.strip() for name in contributors_str.split(',') if name.strip()]
+                    workflow_manager.contributors = contributors
                 
                 send_progress(session_id, f"📚 Processing {len(courses)} course(s)...", "processing", 10)
                 
