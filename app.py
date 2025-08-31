@@ -15,6 +15,7 @@ from course_components.downloader import YouTubeDownloader
 from course_components.transcription import TranscriptionService
 from course_components.chapter_generator import ChapterGenerator
 from course_components.quiz_generator import QuizGenerator
+from course_components.quiz_workflow import QuizWorkflowManager
 from course_components.utils import detect_youtube_url_type
 
 # Load environment variables
@@ -427,90 +428,185 @@ def create_chapters():
 
 @app.route('/api/create-quiz', methods=['POST'])
 def create_quiz():
-    """Create quiz from chapters"""
+    """Create quiz from chapters - supports both old and new workflow"""
     data = request.json
-    chapter_folder = data.get('chapter_folder')
-    subfolder = data.get('subfolder', None)
-    author = data.get('author', 'Unknown Author')
-    contributors_str = data.get('contributors', '')
     
-    session_id = create_progress_queue()
-    active_processes[session_id] = {'cancelled': False}
-    
-    def process():
-        try:
-            if active_processes.get(session_id, {}).get('cancelled', False):
-                return
-                
-            send_progress(session_id, "🧠 Starting quiz generation...", "processing", 10)
-            
-            # Find chapter files
-            chapters_path = Path('outputs') / 'chapters' / chapter_folder
-            if not chapters_path.exists():
-                send_progress(session_id, f"❌ Chapter folder not found: {chapter_folder}", "error", 100)
-                return
-            
-            # Sort chapter files alphabetically to maintain order
-            md_files = sorted(list(chapters_path.glob('*_chapter.md')), key=lambda x: x.name)
-            if not md_files:
-                send_progress(session_id, "❌ No chapter files found", "error", 100)
-                return
-            
-            send_progress(session_id, f"📄 Found {len(md_files)} chapter files (processing in order)", "processing", 20)
-            
-            # Set up output directory
-            base_path = Path('outputs') / 'quizz'
-            if subfolder:
-                output_path = base_path / subfolder
-            else:
-                output_path = base_path / chapter_folder
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Initialize quiz generator
+    # Check if this is the new wizard workflow (has 'repository' field)
+    if 'repository' in data:
+        # New wizard workflow
+        from course_components.quiz_workflow import QuizWorkflowManager
+        
+        repository = data.get('repository')
+        courses = data.get('courses', [])
+        language = data.get('language', 'en')
+        chapters = data.get('chapters', 'all')
+        difficulty = data.get('difficulty', {'easy': 3, 'intermediate': 3, 'hard': 3})
+        author = data.get('author', 'Unknown Author')
+        contributors_str = data.get('contributors', '')
+        
+        session_id = create_progress_queue()
+        active_processes[session_id] = {'cancelled': False}
+        
+        def process():
             try:
-                generator = QuizGenerator()
-                generator.author = author
-                
-                # Parse contributors
-                if contributors_str:
-                    generator.contributor_names = [name.strip() for name in contributors_str.split(',') if name.strip()]
-                else:
-                    generator.contributor_names = []
-                
-                send_progress(session_id, f"✅ Quiz generator initialized with author: {author}", "processing", 30)
-                if generator.contributor_names:
-                    send_progress(session_id, f"📝 Contributors: {', '.join(generator.contributor_names)}", "processing", 32)
-            except Exception as e:
-                send_progress(session_id, f"❌ Error initializing generator: {str(e)}", "error", 100)
-                return
-            
-            # Process each chapter
-            for idx, chapter_file in enumerate(md_files, 1):
                 if active_processes.get(session_id, {}).get('cancelled', False):
-                    break
+                    return
                     
-                percentage = 30 + (idx / len(md_files)) * 60
-                send_progress(session_id, f"🧠 Processing: {chapter_file.name}", "processing", percentage)
+                send_progress(session_id, "🚀 Initializing quiz workflow manager...", "processing", 5)
                 
+                # Initialize workflow manager
+                workflow_manager = QuizWorkflowManager()
+                
+                # Set author and contributors
+                workflow_manager.author = author
+                if contributors_str:
+                    workflow_manager.contributors = [name.strip() for name in contributors_str.split(',') if name.strip()]
+                
+                send_progress(session_id, f"📚 Processing {len(courses)} course(s)...", "processing", 10)
+                
+                total_questions_generated = 0
+                questions_per_chapter = sum(difficulty.values())
+                
+                # Process each course
+                for course_idx, course in enumerate(courses):
+                    course_progress_base = 10 + (course_idx * 80 / len(courses))
+                    
+                    if active_processes.get(session_id, {}).get('cancelled', False):
+                        send_progress(session_id, "🛑 Process cancelled", "error", 100)
+                        return
+                    
+                    send_progress(session_id, f"📖 Processing course: {course}", "processing", course_progress_base)
+                    
+                    # Get chapters for the course
+                    course_chapters = workflow_manager.get_chapters(repository, course, language)
+                    
+                    if not course_chapters:
+                        send_progress(session_id, f"⚠️ No chapters found for {course}", "warning", course_progress_base + 5)
+                        continue
+                    
+                    # Filter chapters if specific ones requested
+                    if chapters != 'all' and isinstance(chapters, list):
+                        course_chapters = [ch for ch in course_chapters if ch['id'] in chapters]
+                    
+                    send_progress(session_id, f"📝 Found {len(course_chapters)} chapters in {course}", "processing", course_progress_base + 10)
+                    
+                    # Generate questions for each chapter
+                    for ch_idx, chapter in enumerate(course_chapters):
+                        chapter_progress = course_progress_base + 10 + (ch_idx * 70 / len(courses) / len(course_chapters))
+                        
+                        if active_processes.get(session_id, {}).get('cancelled', False):
+                            send_progress(session_id, "🛑 Process cancelled", "error", 100)
+                            return
+                        
+                        send_progress(session_id, f"🎯 Generating questions for: {chapter['title'][:50]}...", "processing", chapter_progress)
+                        
+                        # Generate questions with specified difficulty
+                        questions = workflow_manager.generate_questions_for_chapter(
+                            repository, course, chapter['id'], 
+                            difficulty, language
+                        )
+                        
+                        if questions:
+                            total_questions_generated += len(questions)
+                            send_progress(session_id, f"✅ Generated {len(questions)} questions for chapter", "processing", chapter_progress + 5)
+                        else:
+                            send_progress(session_id, f"⚠️ Failed to generate questions for chapter", "warning", chapter_progress + 5)
+                
+                send_progress(session_id, f"🎉 Quiz generation complete! Generated {total_questions_generated} questions", "success", 100)
+                
+            except Exception as e:
+                send_progress(session_id, f"❌ Error: {str(e)}", "error", 100)
+        
+        # Start processing in background
+        thread = threading.Thread(target=process)
+        thread.start()
+        
+        return jsonify({"session_id": session_id})
+    
+    else:
+        # Old workflow (backward compatibility)
+        chapter_folder = data.get('chapter_folder')
+        subfolder = data.get('subfolder', None)
+        author = data.get('author', 'Unknown Author')
+        contributors_str = data.get('contributors', '')
+        
+        session_id = create_progress_queue()
+        active_processes[session_id] = {'cancelled': False}
+        
+        def process():
+            try:
+                if active_processes.get(session_id, {}).get('cancelled', False):
+                    return
+                    
+                send_progress(session_id, "🧠 Starting quiz generation...", "processing", 10)
+                
+                # Find chapter files
+                chapters_path = Path('outputs') / 'chapters' / chapter_folder
+                if not chapters_path.exists():
+                    send_progress(session_id, f"❌ Chapter folder not found: {chapter_folder}", "error", 100)
+                    return
+                
+                # Sort chapter files alphabetically to maintain order
+                md_files = sorted(list(chapters_path.glob('*_chapter.md')), key=lambda x: x.name)
+                if not md_files:
+                    send_progress(session_id, "❌ No chapter files found", "error", 100)
+                    return
+                
+                send_progress(session_id, f"📄 Found {len(md_files)} chapter files (processing in order)", "processing", 20)
+                
+                # Set up output directory
+                base_path = Path('outputs') / 'quizz'
+                if subfolder:
+                    output_path = base_path / subfolder
+                else:
+                    output_path = base_path / chapter_folder
+                output_path.mkdir(parents=True, exist_ok=True)
+                
+                # Initialize quiz generator
                 try:
-                    # Generate quizzes (simplified - not interactive for web)
-                    all_quizzes = generator.generate_quizzes_from_file(chapter_file)
+                    generator = QuizGenerator()
+                    generator.author = author
                     
-                    # Save quizzes
-                    generator.save_multiple_quizzes(all_quizzes, output_path, chapter_file.stem)
-                    
-                    send_progress(session_id, f"✅ Created {len(all_quizzes)} quiz questions", "processing", percentage)
+                    # Parse contributors
+                    if contributors_str:
+                        generator.contributor_names = [name.strip() for name in contributors_str.split(',') if name.strip()]
+                    else:
+                        generator.contributor_names = []
+                        
+                    send_progress(session_id, f"✅ Quiz generator initialized with author: {author}", "processing", 30)
+                    if generator.contributor_names:
+                        send_progress(session_id, f"📝 Contributors: {', '.join(generator.contributor_names)}", "processing", 32)
                 except Exception as e:
-                    send_progress(session_id, f"⚠️ Error with {chapter_file.name}: {str(e)}", "warning", percentage)
-            
-            if not active_processes.get(session_id, {}).get('cancelled', False):
-                send_progress(session_id, "✅ All quizzes generated successfully!", "success", 100)
-            
-        except Exception as e:
-            send_progress(session_id, f"❌ Error: {str(e)}", "error", 100)
-        finally:
-            if session_id in active_processes:
-                del active_processes[session_id]
+                    send_progress(session_id, f"❌ Error initializing generator: {str(e)}", "error", 100)
+                    return
+                
+                # Process each chapter
+                for idx, chapter_file in enumerate(md_files, 1):
+                    if active_processes.get(session_id, {}).get('cancelled', False):
+                        break
+                        
+                    percentage = 30 + (idx / len(md_files)) * 60
+                    send_progress(session_id, f"🧠 Processing: {chapter_file.name}", "processing", percentage)
+                    
+                    try:
+                        # Generate quizzes (simplified - not interactive for web)
+                        all_quizzes = generator.generate_quizzes_from_file(chapter_file)
+                        
+                        # Save quizzes
+                        generator.save_multiple_quizzes(all_quizzes, output_path, chapter_file.stem)
+                        
+                        send_progress(session_id, f"✅ Created {len(all_quizzes)} quiz questions", "processing", percentage)
+                    except Exception as e:
+                        send_progress(session_id, f"⚠️ Error with {chapter_file.name}: {str(e)}", "warning", percentage)
+                
+                if not active_processes.get(session_id, {}).get('cancelled', False):
+                    send_progress(session_id, "✅ All quizzes generated successfully!", "success", 100)
+                
+            except Exception as e:
+                send_progress(session_id, f"❌ Error: {str(e)}", "error", 100)
+            finally:
+                if session_id in active_processes:
+                    del active_processes[session_id]
     
     # Start processing in background
     thread = threading.Thread(target=process)
@@ -529,6 +625,201 @@ def list_folders():
     
     folders = [f.name for f in base_path.iterdir() if f.is_dir()]
     return jsonify({"folders": sorted(folders)})
+
+@app.route('/api/quiz/repos', methods=['GET'])
+def quiz_list_repos():
+    """List available quiz repositories"""
+    try:
+        workflow_manager = QuizWorkflowManager()
+        repositories = workflow_manager.list_repositories()
+        
+        repo_data = []
+        for repo in repositories:
+            repo_data.append({
+                'key': repo.key,
+                'name': repo.name,
+                'path': str(repo.path),
+                'configured': repo.configured,
+                'exists': repo.exists,
+                'valid': repo.valid
+            })
+        
+        return jsonify({
+            'repositories': repo_data,
+            'total': len(repo_data),
+            'valid': len([r for r in repo_data if r['valid']])
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/quiz/courses', methods=['GET'])
+def quiz_list_courses():
+    """List courses in a repository"""
+    repo_key = request.args.get('repo_key')
+    if not repo_key:
+        return jsonify({'error': 'repo_key parameter required'}), 400
+    
+    try:
+        workflow_manager = QuizWorkflowManager()
+        courses = workflow_manager.list_courses(repo_key)
+        
+        return jsonify({
+            'courses': courses,
+            'total': len(courses),
+            'repository': repo_key
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/quiz/chapters', methods=['GET'])
+def quiz_list_chapters():
+    """List chapters in a course"""
+    repo_key = request.args.get('repo_key')
+    course_name = request.args.get('course_name')
+    language = request.args.get('language', 'en')
+    
+    if not repo_key or not course_name:
+        return jsonify({'error': 'repo_key and course_name parameters required'}), 400
+    
+    try:
+        workflow_manager = QuizWorkflowManager()
+        chapters = workflow_manager.list_chapters(repo_key, course_name, language)
+        
+        return jsonify({
+            'chapters': chapters,
+            'total': len(chapters),
+            'repository': repo_key,
+            'course': course_name,
+            'language': language
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/quiz/languages', methods=['GET'])
+def quiz_list_languages():
+    """List available languages for a course"""
+    repo_key = request.args.get('repo_key')
+    course_name = request.args.get('course_name')
+    
+    if not repo_key or not course_name:
+        return jsonify({'error': 'repo_key and course_name parameters required'}), 400
+    
+    try:
+        workflow_manager = QuizWorkflowManager()
+        languages = workflow_manager.list_languages(repo_key, course_name)
+        
+        return jsonify({
+            'languages': languages,
+            'total': len(languages),
+            'repository': repo_key,
+            'course': course_name
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/quiz/generate', methods=['POST'])
+def quiz_generate():
+    """Generate quiz questions with progress updates"""
+    data = request.json
+    
+    # Validate required parameters
+    required_fields = ['repo_key', 'course_name', 'chapter_ids']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'{field} parameter required'}), 400
+    
+    repo_key = data['repo_key']
+    course_name = data['course_name']
+    chapter_ids = data['chapter_ids']
+    language = data.get('language', 'en')
+    question_count = data.get('question_count', 5)
+    author = data.get('author', 'Course Ally')
+    contributors = data.get('contributors', [])
+    
+    # Difficulty proportions
+    difficulty_proportions = data.get('difficulty_proportions', {
+        'easy': 0.3,
+        'intermediate': 0.5,
+        'hard': 0.2
+    })
+    
+    # Validate parameters
+    if not isinstance(chapter_ids, list) or len(chapter_ids) == 0:
+        return jsonify({'error': 'chapter_ids must be a non-empty list'}), 400
+    
+    if question_count < 1 or question_count > 50:
+        return jsonify({'error': 'question_count must be between 1 and 50'}), 400
+    
+    # Validate difficulty proportions
+    if not all(isinstance(v, (int, float)) for v in difficulty_proportions.values()):
+        return jsonify({'error': 'difficulty_proportions values must be numeric'}), 400
+    
+    total_proportion = sum(difficulty_proportions.values())
+    if abs(total_proportion - 1.0) > 0.01:  # Allow small floating point errors
+        return jsonify({'error': 'difficulty_proportions must sum to 1.0'}), 400
+    
+    session_id = create_progress_queue()
+    active_processes[session_id] = {'cancelled': False}
+    
+    def process():
+        try:
+            workflow_manager = QuizWorkflowManager()
+            
+            # Check if process was cancelled
+            if active_processes.get(session_id, {}).get('cancelled', False):
+                return
+            
+            # Generate quiz with progress updates
+            for progress_update in workflow_manager.generate_quiz(
+                repo_key=repo_key,
+                course_name=course_name,
+                chapter_ids=chapter_ids,
+                language=language,
+                question_count=question_count,
+                difficulty_proportions=difficulty_proportions,
+                author=author,
+                contributors=contributors,
+                progress_callback=lambda msg, status, pct: send_progress(session_id, msg, status, pct)
+            ):
+                # Check if process was cancelled
+                if active_processes.get(session_id, {}).get('cancelled', False):
+                    send_progress(session_id, "🛑 Quiz generation cancelled", "error", 100)
+                    return
+                
+                # Send progress update
+                send_progress(
+                    session_id,
+                    progress_update['message'],
+                    progress_update['status'],
+                    progress_update.get('percentage')
+                )
+                
+                # If this is the final message, break
+                if progress_update['status'] in ['success', 'error']:
+                    break
+                    
+        except Exception as e:
+            send_progress(session_id, f"❌ Quiz generation error: {str(e)}", "error", 100)
+        finally:
+            if session_id in active_processes:
+                del active_processes[session_id]
+    
+    # Start processing in background
+    thread = threading.Thread(target=process)
+    thread.start()
+    
+    return jsonify({
+        "session_id": session_id,
+        "message": "Quiz generation started",
+        "parameters": {
+            "repo_key": repo_key,
+            "course_name": course_name,
+            "chapter_ids": chapter_ids,
+            "language": language,
+            "question_count": question_count,
+            "difficulty_proportions": difficulty_proportions
+        }
+    })
 
 @app.route('/api/progress/<session_id>')
 def progress_stream(session_id):
