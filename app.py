@@ -500,13 +500,12 @@ def create_quiz():
                     
                     # Generate quiz using the workflow manager
                     try:
-                        # Create progress callback
-                        def quiz_progress(msg):
+                        # Create progress callback that accepts 3 arguments
+                        def quiz_progress(message, status, percentage):
                             nonlocal total_questions_generated
-                            if 'Generated' in msg.get('message', ''):
+                            if 'Generated' in message:
                                 total_questions_generated += 1
-                            send_progress(session_id, msg.get('message', ''), 
-                                        msg.get('status', 'processing'), 
+                            send_progress(session_id, message, status, 
                                         course_progress_base + 20 + (course_idx * 60 / len(courses)))
                         
                         # Generate quiz for all chapters in this course
