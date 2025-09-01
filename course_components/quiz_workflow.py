@@ -547,51 +547,11 @@ class QuizWorkflowManager:
                 else:
                     chapter_question_count = min(questions_per_chapter, remaining_questions)
                 
-                # First, try to load existing questions from the repository
-                existing_questions = self._load_existing_questions_from_repo(
-                    repo_key, course_name, chapter['chapter_id']
-                )
-                
-                # Filter existing questions by difficulty if available
+                # Get difficulties for this chapter
                 chapter_difficulties = difficulties[len(all_questions):len(all_questions) + chapter_question_count]
                 
-                # Use existing questions first, then generate new ones if needed
-                questions_added_from_existing = 0
-                for difficulty in chapter_difficulties:
-                    # Try to find an existing question with this difficulty
-                    existing_q = next(
-                        (q for q in existing_questions 
-                         if q['difficulty'] == difficulty 
-                         and q not in [eq for eq in all_questions if eq.get('source') == 'existing_repo']),
-                        None
-                    )
-                    
-                    if existing_q:
-                        # Use existing question
-                        enhanced_question = {
-                            **existing_q,
-                            'chapter_title': chapter['title'],
-                            'question_number': len(all_questions) + 1,
-                            'generated_at': datetime.now().isoformat(),
-                            'source': 'existing_repo'
-                        }
-                        all_questions.append(enhanced_question)
-                        questions_added_from_existing += 1
-                        
-                        question_percentage = chapter_start_percentage + (len(all_questions) / chapter_question_count) * (chapter_end_percentage - chapter_start_percentage)
-                        if progress_callback:
-                            progress_callback(f"Used existing question {len(all_questions)}/{question_count}", "processing", question_percentage)
-                        yield {
-                            "status": "processing",
-                            "message": f"Used existing question {len(all_questions)}/{question_count}",
-                            "percentage": question_percentage,
-                            "data": {"questions_generated": len(all_questions), "source": "existing"}
-                        }
-                
-                # Generate new questions for remaining difficulties
-                remaining_difficulties = chapter_difficulties[questions_added_from_existing:]
-                
-                for q_idx, difficulty in enumerate(remaining_difficulties):
+                # Generate new questions for each difficulty
+                for q_idx, difficulty in enumerate(chapter_difficulties):
                     question_percentage = chapter_start_percentage + (q_idx / len(chapter_difficulties)) * (chapter_end_percentage - chapter_start_percentage)
                     
                     try:
