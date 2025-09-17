@@ -1331,18 +1331,18 @@
                     <h3 class="step-title">Select Chapters</h3>
                     <p class="step-description">Choose which chapters to include in the quiz.</p>
                     
-                    <div class="chapter-options">
-                        <div class="option-toggle">
-                            <input type="radio" id="all-chapters" name="chapter-selection" value="all" checked>
+                    <div class="chapter-options" style="display: none;">
+                        <div class="option-toggle" style="display: none;">
+                            <input type="radio" id="all-chapters" name="chapter-selection" value="all">
                             <label for="all-chapters">All chapters</label>
                         </div>
                         <div class="option-toggle">
-                            <input type="radio" id="specific-chapters" name="chapter-selection" value="specific">
-                            <label for="specific-chapters">Specific chapters</label>
+                            <input type="radio" id="specific-chapters" name="chapter-selection" value="specific" checked>
+                            <label for="specific-chapters" style="display: none;">Specific chapters</label>
                         </div>
                     </div>
                     
-                    <div class="chapter-list hidden" id="chapter-list">
+                    <div class="chapter-list" id="chapter-list">
                         <div class="loading-placeholder">
                             <div class="spinner"></div>
                             <span>Loading chapters...</span>
@@ -1534,7 +1534,7 @@
                         repository: null,
                         courses: [],
                         language: 'en',
-                        chapters: 'all',
+                        chapters: 'specific',  // Always use specific chapters
                         specificChapters: [],
                         difficulty: { easy: 3, intermediate: 3, hard: 3 }
                     };
@@ -1797,7 +1797,7 @@
             repository: null,
             courses: [],
             language: 'en',
-            chapters: 'all',
+            chapters: 'specific',  // Always use specific chapters
             specificChapters: [],
             difficulty: { easy: 3, intermediate: 3, hard: 3 }
         };
@@ -2099,21 +2099,10 @@
         }
 
         async function loadChapters() {
-            // Setup chapter selection radio buttons
-            document.querySelectorAll('input[name="chapter-selection"]').forEach(radio => {
-                radio.addEventListener('change', (e) => {
-                    quizWizardState.chapters = e.target.value;
-                    const chapterList = document.getElementById('chapter-list');
-                    
-                    if (e.target.value === 'specific') {
-                        chapterList.classList.remove('hidden');
-                        loadChapterList();
-                    } else {
-                        chapterList.classList.add('hidden');
-                        quizWizardState.specificChapters = [];
-                    }
-                });
-            });
+            // Set to specific chapters and load the list immediately
+            quizWizardState.chapters = 'specific';
+            document.getElementById('specific-chapters').checked = true;
+            loadChapterList();
         }
 
         async function loadChapterList() {
@@ -2229,7 +2218,7 @@
             
             // Chapters
             document.getElementById('review-chapters').textContent = 
-                quizWizardState.chapters === 'all' ? 'All chapters' : `${quizWizardState.specificChapters.length} specific chapters`;
+                quizWizardState.chapters === 'all' ? 'All chapters' : `${quizWizardState.specificChapters.length} selected chapters`;
             
             // Difficulty
             const { easy, intermediate, hard } = quizWizardState.difficulty;
@@ -2238,7 +2227,7 @@
             document.getElementById('review-hard').textContent = hard;
             
             // Total estimate
-            const totalQuestions = (easy + intermediate + hard) * (quizWizardState.chapters === 'all' ? 'All chapters' : quizWizardState.specificChapters.length);
+            const totalQuestions = (easy + intermediate + hard) * (quizWizardState.chapters === 'all' ? 'All' : quizWizardState.specificChapters.length);
             document.getElementById('review-total').textContent = totalQuestions;
         }
 

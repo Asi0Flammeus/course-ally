@@ -178,12 +178,29 @@ class QuizWorkflowManager:
                     hours = metadata.get('hours', 'N/A')
                     description = metadata.get('description', f'{topic.capitalize()} course - {level} level - {hours} hours')
                     
+                    # Count chapters for the default language (first available)
+                    chapter_count = 0
+                    languages = metadata.get('languages', ['en'])
+                    if languages:
+                        # Try to count chapters in the first available language file
+                        for lang in languages:
+                            lang_file = course_dir / f'{lang}.md'
+                            if lang_file.exists():
+                                try:
+                                    content = lang_file.read_text(encoding='utf-8')
+                                    chapters = self._extract_chapters_from_content(content, lang_file)
+                                    chapter_count = len(chapters)
+                                    break
+                                except:
+                                    pass
+                    
                     courses.append({
                         'name': course_dir.name,
                         'title': title,
                         'description': description,
                         'path': str(course_dir),
-                        'languages': metadata.get('languages', ['en']),
+                        'chapters': chapter_count,
+                        'languages': languages,
                         'metadata': metadata
                     })
                 except Exception as e:
@@ -193,6 +210,7 @@ class QuizWorkflowManager:
                         'title': course_dir.name,
                         'description': f'Error reading metadata: {str(e)}',
                         'path': str(course_dir),
+                        'chapters': 0,
                         'languages': ['en'],
                         'metadata': {}
                     })
@@ -203,6 +221,7 @@ class QuizWorkflowManager:
                     'title': course_dir.name,
                     'description': 'No course metadata found',
                     'path': str(course_dir),
+                    'chapters': 0,
                     'languages': ['en'],
                     'metadata': {}
                 })
@@ -404,6 +423,18 @@ class QuizWorkflowManager:
             f.write(f"difficulty: {question_data.get('difficulty', 'intermediate')}\n")
             f.write(f"duration: {question_data.get('duration', 30)}\n")
             f.write(f"author: {question_data.get('author', 'Course Ally')}\n")
+            f.write(f"original_language: en\n")
+            f.write(f"proofreading:\n")
+            f.write(f"  - language: en\n")
+            f.write(f"    last_contribution_date: {datetime.now().strftime('%Y-%m-%d')}\n")
+            f.write(f"    urgency: 1\n")
+            f.write(f"    contributor_names:\n")
+            
+            # Add contributor names if available
+            contributor = question_data.get('author', 'Course Ally')
+            f.write(f"    - {contributor}\n")
+            
+            f.write(f"    reward: 1\n")
         
         # Save content ({language}.yml) with proper field order and formatting
         content_file = question_dir / f'{language}.yml'
