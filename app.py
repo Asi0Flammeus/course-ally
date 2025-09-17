@@ -440,6 +440,7 @@ def create_quiz():
         courses = data.get('courses', [])
         language = data.get('language', 'en')
         chapters = data.get('chapters', 'all')
+        specific_chapters = data.get('specific_chapters', [])  # Get the actual chapter IDs
         difficulty = data.get('difficulty', {'easy': 3, 'intermediate': 3, 'hard': 3})
         author = data.get('author', 'Unknown Author')
         contributors_str = data.get('contributors', '')
@@ -487,8 +488,8 @@ def create_quiz():
                         continue
                     
                     # Filter chapters if specific ones requested
-                    if chapters != 'all' and isinstance(chapters, list):
-                        course_chapters = [ch for ch in course_chapters if ch['chapter_id'] in chapters]
+                    if chapters == 'specific' and specific_chapters:
+                        course_chapters = [ch for ch in course_chapters if ch['chapter_id'] in specific_chapters]
                     
                     send_progress(session_id, f"📝 Found {len(course_chapters)} chapters in {course}", "processing", course_progress_base + 10)
                     

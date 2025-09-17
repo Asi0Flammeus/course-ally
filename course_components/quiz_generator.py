@@ -152,8 +152,10 @@ Generate a quiz question with:
 IMPORTANT:
 - Keep question and answers on single lines (no line breaks within them)
 - Wrong answers should be believable but definitively incorrect
+- Correct and wrong answer should be roughly the same length
 - Explanation should thoroughly explain why the correct answer is right and others are wrong
 - For the chapter content provided, focus on key concepts that appear in the material
+- The question should be self-sufficient and MUST NOT have reference to the chapter itself, like "seen in the current chapter"
 
 Return ONLY a JSON object in this exact format:
 {{
@@ -170,8 +172,8 @@ Return ONLY a JSON object in this exact format:
         
         try:
             response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=1000,
+                model="claude-sonnet-4-20250514",
+                max_tokens=20000,
                 temperature=0.7,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -270,20 +272,46 @@ Return ONLY a JSON object in this exact format:
         
         # Write the YAML manually to ensure proper formatting
         with open(en_file, 'w', encoding='utf-8') as f:
-            # Write in the desired order with proper formatting
-            f.write(f"question: {self._yaml_escape_string(quiz_data['question'])}\n")
-            f.write(f"answer: {self._yaml_escape_string(quiz_data['answer'])}\n")
+            # Write in the desired order: question, answer, wrong_answers, explanation
+            
+            # Question - single line
+            question = quiz_data['question']
+            f.write(f"question: {question}\n")
+            
+            # Answer - single line  
+            answer = quiz_data['answer']
+            f.write(f"answer: {answer}\n")
+            
+            # Wrong answers - one per line with 2-space indentation
             f.write("wrong_answers:\n")
             for wrong_answer in quiz_data['wrong_answers']:
-                f.write(f"  - {self._yaml_escape_string(wrong_answer)}\n")
+                # Handle special characters in answers
+                if "'" in wrong_answer and '"' not in wrong_answer:
+                    f.write(f'  - "{wrong_answer}"\n')
+                elif '"' in wrong_answer and "'" not in wrong_answer:
+                    f.write(f"  - '{wrong_answer}'\n")
+                elif "'" in wrong_answer and '"' in wrong_answer:
+                    # Use literal style for complex quotes
+                    escaped = wrong_answer.replace("'", "''")
+                    f.write(f"  - '{escaped}'\n")
+                else:
+                    f.write(f"  - {wrong_answer}\n")
             
-            # Write explanation with multi-line format
-            f.write("explanation: |\n")
-            explanation_lines = quiz_data['explanation'].split('\n')
-            for line in explanation_lines:
-                f.write(f"  {line}\n")
-            
-            f.write("reviewed: false\n")
+            # Explanation - use literal style for multi-line
+            explanation = quiz_data['explanation']
+            if '\n' in explanation or len(explanation) > 80:
+                # Use literal style for multi-line explanations
+                f.write("explanation: |\n")
+                for line in explanation.split('\n'):
+                    f.write(f"  {line}\n")
+            else:
+                # Single line explanation
+                if "'" in explanation and '"' not in explanation:
+                    f.write(f'explanation: "{explanation}"\n')
+                elif '"' in explanation and "'" not in explanation:
+                    f.write(f"explanation: '{explanation}'\n")
+                else:
+                    f.write(f"explanation: {explanation}\n")
         
         print(f"✅ Quiz files saved to {quiz_dir}")
     

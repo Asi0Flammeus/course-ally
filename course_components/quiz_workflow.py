@@ -396,29 +396,58 @@ class QuizWorkflowManager:
         question_dir = quizz_path / folder_num
         question_dir.mkdir(exist_ok=True)
         
-        # Prepare metadata (question.yml)
-        metadata = {
-            'id': question_data.get('id', str(uuid.uuid4())),
-            'chapterId': question_data.get('chapter_id'),
-            'difficulty': question_data.get('difficulty', 'intermediate'),
-            'duration': question_data.get('duration', 30),
-            'author': question_data.get('author', 'Course Ally')
-        }
+        # Save metadata (question.yml)
+        metadata_file = question_dir / 'question.yml'
+        with open(metadata_file, 'w', encoding='utf-8') as f:
+            f.write(f"id: {question_data.get('id', str(uuid.uuid4()))}\n")
+            f.write(f"chapterId: {question_data.get('chapter_id', '')}\n")
+            f.write(f"difficulty: {question_data.get('difficulty', 'intermediate')}\n")
+            f.write(f"duration: {question_data.get('duration', 30)}\n")
+            f.write(f"author: {question_data.get('author', 'Course Ally')}\n")
         
-        # Prepare content ({language}.yml)
-        content = {
-            'question': question_data.get('question', ''),
-            'answer': question_data.get('answer', ''),
-            'wrong_answers': question_data.get('wrong_answers', []),
-            'explanation': question_data.get('explanation', '')
-        }
-        
-        # Save files
-        with open(question_dir / 'question.yml', 'w', encoding='utf-8') as f:
-            yaml.dump(metadata, f, allow_unicode=True, default_flow_style=False)
-        
-        with open(question_dir / f'{language}.yml', 'w', encoding='utf-8') as f:
-            yaml.dump(content, f, allow_unicode=True, default_flow_style=False)
+        # Save content ({language}.yml) with proper field order and formatting
+        content_file = question_dir / f'{language}.yml'
+        with open(content_file, 'w', encoding='utf-8') as f:
+            # Write fields in the desired order
+            # Question - single line
+            question = question_data.get('question', '')
+            f.write(f"question: {question}\n")
+            
+            # Answer - single line
+            answer = question_data.get('answer', '')
+            f.write(f"answer: {answer}\n")
+            
+            # Wrong answers - one per line with 2-space indentation
+            f.write("wrong_answers:\n")
+            wrong_answers = question_data.get('wrong_answers', [])
+            for wrong_answer in wrong_answers:
+                # Escape quotes if needed
+                if "'" in wrong_answer and '"' not in wrong_answer:
+                    f.write(f'  - "{wrong_answer}"\n')
+                elif '"' in wrong_answer and "'" not in wrong_answer:
+                    f.write(f"  - '{wrong_answer}'\n")
+                elif "'" in wrong_answer and '"' in wrong_answer:
+                    # Use literal style for complex quotes
+                    escaped = wrong_answer.replace("'", "''")
+                    f.write(f"  - '{escaped}'\n")
+                else:
+                    f.write(f"  - {wrong_answer}\n")
+            
+            # Explanation - use literal style for multi-line
+            explanation = question_data.get('explanation', '')
+            if '\n' in explanation or len(explanation) > 80:
+                # Use literal style for multi-line explanations
+                f.write("explanation: |\n")
+                for line in explanation.split('\n'):
+                    f.write(f"  {line}\n")
+            else:
+                # Single line explanation
+                if "'" in explanation and '"' not in explanation:
+                    f.write(f'explanation: "{explanation}"\n')
+                elif '"' in explanation and "'" not in explanation:
+                    f.write(f"explanation: '{explanation}'\n")
+                else:
+                    f.write(f"explanation: {explanation}\n")
         
         return folder_num
     
@@ -502,14 +531,15 @@ class QuizWorkflowManager:
                 "data": {"chapters_found": len(selected_chapters)}
             }
             
-            # Calculate difficulty distribution
-            difficulties = self._balance_difficulty(question_count, difficulty_proportions)
+            # Calculate difficulty distribution for ALL questions (question_count * chapters)
+            total_questions = question_count * len(selected_chapters)
+            difficulties = self._balance_difficulty(total_questions, difficulty_proportions)
             
             if progress_callback:
-                progress_callback(f"Generating {question_count} questions with balanced difficulty", "processing", 30)
+                progress_callback(f"Generating {total_questions} questions ({question_count} per chapter) with balanced difficulty", "processing", 30)
             yield {
                 "status": "processing",
-                "message": f"Generating {question_count} questions with balanced difficulty",
+                "message": f"Generating {total_questions} questions ({question_count} per chapter) with balanced difficulty",
                 "percentage": 30,
                 "data": {
                     "difficulty_distribution": {
@@ -520,9 +550,9 @@ class QuizWorkflowManager:
                 }
             }
             
-            # Generate questions
+            # Generate questions - question_count for EACH chapter
             all_questions = []
-            questions_per_chapter = max(1, question_count // len(selected_chapters))
+            questions_per_chapter = question_count  # Generate requested number for each chapter
             
             for i, chapter in enumerate(selected_chapters):
                 chapter_start_percentage = 30 + (i / len(selected_chapters)) * 50
@@ -537,18 +567,13 @@ class QuizWorkflowManager:
                     "data": {"current_chapter": chapter['title']}
                 }
                 
-                # Determine how many questions to generate for this chapter
-                remaining_questions = question_count - len(all_questions)
-                remaining_chapters = len(selected_chapters) - i
-                
-                if remaining_chapters == 1:
-                    # Last chapter gets all remaining questions
-                    chapter_question_count = remaining_questions
-                else:
-                    chapter_question_count = min(questions_per_chapter, remaining_questions)
+                # Each chapter gets the requested number of questions
+                chapter_question_count = questions_per_chapter
                 
                 # Get difficulties for this chapter
-                chapter_difficulties = difficulties[len(all_questions):len(all_questions) + chapter_question_count]
+                chapter_start_idx = i * questions_per_chapter
+                chapter_end_idx = chapter_start_idx + chapter_question_count
+                chapter_difficulties = difficulties[chapter_start_idx:chapter_end_idx]
                 
                 # Generate new questions for each difficulty
                 for q_idx, difficulty in enumerate(chapter_difficulties):
@@ -594,10 +619,10 @@ class QuizWorkflowManager:
                             all_questions.append(enhanced_question)
                             
                             if progress_callback:
-                                progress_callback(f"Generated question {len(all_questions)}/{question_count}", "processing", question_percentage)
+                                progress_callback(f"Generated question {len(all_questions)}/{total_questions}", "processing", question_percentage)
                             yield {
                                 "status": "processing",
-                                "message": f"Generated question {len(all_questions)}/{question_count}",
+                                "message": f"Generated question {len(all_questions)}/{total_questions}",
                                 "percentage": question_percentage,
                                 "data": {"questions_generated": len(all_questions)}
                             }
@@ -622,8 +647,7 @@ class QuizWorkflowManager:
                         continue
                 
                 # Break if we have enough questions
-                if len(all_questions) >= question_count:
-                    break
+                # Don't break early - continue generating for all chapters
             
             if not all_questions:
                 error_msg = "No questions were generated successfully"
