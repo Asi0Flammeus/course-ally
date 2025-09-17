@@ -147,7 +147,7 @@ Generate a quiz question with:
 1. A clear, single-line question (no line breaks)
 2. One correct answer (single line)
 3. Three wrong answers that are plausible but clearly incorrect (each on single line)
-4. A detailed explanation that teaches the concept (can be multiple paragraphs)
+4. A 50-word explanation that provide argument why it's true, or reformulate the concept to ease the understanding
 
 IMPORTANT:
 - Keep question and answers on single lines (no line breaks within them)
