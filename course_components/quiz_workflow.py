@@ -606,7 +606,12 @@ class QuizWorkflowManager:
                 chapter_end_idx = chapter_start_idx + chapter_question_count
                 chapter_difficulties = difficulties[chapter_start_idx:chapter_end_idx]
                 
-                # Generate new questions for each difficulty
+                # Get quizz path for incremental saving
+                repo_path = self._get_repo_path(repo_key)
+                quizz_path = repo_path / 'courses' / course_name / 'quizz'
+                quizz_path.mkdir(parents=True, exist_ok=True)
+                
+                # Generate new questions for each difficulty with incremental saving
                 for q_idx, difficulty in enumerate(chapter_difficulties):
                     question_percentage = chapter_start_percentage + (q_idx / len(chapter_difficulties)) * (chapter_end_percentage - chapter_start_percentage)
                     
@@ -616,6 +621,7 @@ class QuizWorkflowManager:
                         
                         if not has_content:
                             # Skip generation but continue with existing questions if available
+                            existing_questions = generator._load_existing_questions_for_chapter(quizz_path, chapter['chapter_id'])
                             if len(existing_questions) == 0:
                                 if progress_callback:
                                     progress_callback(f"Skipping chapter {chapter['title']} - no content or existing questions", "warning", question_percentage)
@@ -625,6 +631,85 @@ class QuizWorkflowManager:
                                     "percentage": question_percentage
                                 }
                             continue
+                            
+                        # Load existing questions for this chapter to avoid duplicates
+                        existing_questions = generator._load_existing_questions_for_chapter(quizz_path, chapter['chapter_id'])
+                        
+                        if progress_callback:
+                            existing_count = len(existing_questions)
+                            if existing_count > 0:
+                                progress_callback(f"Found {existing_count} existing questions for chapter {chapter['chapter_id']}", "processing", question_percentage)
+                        
+                        # Generate quiz with duplicate avoidance
+                        question_data = generator._generate_quiz_with_claude_avoiding_duplicates(
+                            chapter['content'],
+                            chapter['title'], 
+                            difficulty,
+                            existing_questions
+                        )
+                        
+                        if question_data:
+                            # Add metadata to question
+                            enhanced_question = {
+                                **question_data,
+                                'id': str(uuid.uuid4()),
+                                'chapter_id': chapter['chapter_id'],
+                                'chapter_title': chapter['title'],
+                                'difficulty': difficulty,
+                                'question_number': len(all_questions) + 1,
+                                'duration': generator._get_duration_for_difficulty(difficulty),
+                                'generated_at': datetime.now().isoformat(),
+                                'source': 'generated'
+                            }
+                            
+                            # Save immediately to avoid loss and enable duplicate detection
+                            folder_num = self._save_quiz_question(
+                                repo_key=repo_key,
+                                course_name=course_name,
+                                question_data={
+                                    'id': enhanced_question.get('id'),
+                                    'chapter_id': enhanced_question.get('chapter_id'),
+                                    'difficulty': enhanced_question.get('difficulty'),
+                                    'duration': enhanced_question.get('duration'),
+                                    'author': author,
+                                    'question': enhanced_question.get('question'),
+                                    'answer': enhanced_question.get('answer'),
+                                    'wrong_answers': enhanced_question.get('wrong_answers'),
+                                    'explanation': enhanced_question.get('explanation')
+                                },
+                                language=language
+                            )
+                            
+                            enhanced_question['saved_folder'] = folder_num
+                            all_questions.append(enhanced_question)
+                            
+                            if progress_callback:
+                                progress_callback(f"Generated and saved question {len(all_questions)}/{total_questions} to folder {folder_num}", "processing", question_percentage)
+                            yield {
+                                "status": "processing",
+                                "message": f"Generated and saved question {len(all_questions)}/{total_questions} to folder {folder_num}",
+                                "percentage": question_percentage,
+                                "data": {"questions_generated": len(all_questions), "saved_to": folder_num}
+                            }
+                        else:
+                            if progress_callback:
+                                progress_callback(f"Failed to generate question {len(all_questions) + 1}", "warning", question_percentage)
+                            yield {
+                                "status": "warning",
+                                "message": f"Failed to generate question {len(all_questions) + 1}",
+                                "percentage": question_percentage
+                            }
+                            
+                    except Exception as e:
+                        error_msg = f"Error generating question: {str(e)}"
+                        if progress_callback:
+                            progress_callback(error_msg, "warning", question_percentage)
+                        yield {
+                            "status": "warning",
+                            "message": error_msg,
+                            "percentage": question_percentage
+                        }
+                        continue
                             
                         question_data = generator._generate_quiz_with_claude(
                             chapter['content'],
@@ -711,48 +796,11 @@ class QuizWorkflowManager:
                 'generator_version': '2.0.0'
             }
             
+            # Questions already saved incrementally, no need to save again
             if progress_callback:
-                progress_callback("Saving quiz questions to repository...", "processing", 90)
-            yield {"status": "processing", "message": "Saving quiz questions to repository...", "percentage": 90}
+                progress_callback("All questions have been saved incrementally", "processing", 95)
             
-            # Save each question to the repository's quizz folder
-            saved_count = 0
-            saved_folders = []
-            for question in all_questions:
-                try:
-                    folder_num = self._save_quiz_question(
-                        repo_key=repo_key,
-                        course_name=course_name,
-                        question_data={
-                            'id': question.get('id', str(uuid.uuid4())),
-                            'chapter_id': question.get('chapter_id'),
-                            'difficulty': question.get('difficulty'),
-                            'duration': question.get('duration', 30),
-                            'author': author,
-                            'question': question.get('question', ''),
-                            'answer': question.get('answer', ''),
-                            'wrong_answers': question.get('wrong_answers', []),
-                            'explanation': question.get('explanation', '')
-                        },
-                        language=language
-                    )
-                    saved_count += 1
-                    saved_folders.append(folder_num)
-                    
-                    if progress_callback:
-                        save_percentage = 90 + (saved_count / len(all_questions)) * 8
-                        progress_callback(f"Saved question {saved_count}/{len(all_questions)} to folder {folder_num}", "processing", save_percentage)
-                    yield {
-                        "status": "processing",
-                        "message": f"Saved question {saved_count}/{len(all_questions)} to folder {folder_num}",
-                        "percentage": 90 + (saved_count / len(all_questions)) * 8,
-                        "data": {"saved_to": folder_num}
-                    }
-                except Exception as e:
-                    error_msg = f"Error saving question: {str(e)}"
-                    if progress_callback:
-                        progress_callback(error_msg, "warning", 95)
-                    yield {
+            yield {
                         "status": "warning",
                         "message": error_msg,
                         "percentage": 95

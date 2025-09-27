@@ -48,13 +48,15 @@ class QuizGenerator:
         print(f"✅ Contributors: {self.contributor_names if self.contributor_names else 'None'}")
         print("="*50)
     
-    def generate_quizzes_from_file(self, chapter_file: Path, chapter_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def generate_quizzes_from_file(self, chapter_file: Path, chapter_id: Optional[str] = None, quizz_output_path: Optional[Path] = None) -> List[Dict[str, Any]]:
         """
         Generate multiple quiz questions from a chapter file (4 easy, 4 intermediate, 4 hard).
+        Uses incremental generation with immediate saving to avoid duplicates.
         
         Args:
             chapter_file: Path to the chapter markdown file
             chapter_id: Optional chapter ID to associate with the quiz
+            quizz_output_path: Optional path to quizz directory for incremental saving
             
         Returns:
             List of dictionaries containing quiz data
@@ -76,24 +78,94 @@ class QuizGenerator:
         for difficulty in difficulties:
             for i in range(questions_per_difficulty):
                 try:
-                    # Generate quiz using Claude
-                    quiz_data = self._generate_quiz_with_claude(chapter_content, chapter_file.stem, difficulty, i + 1)
-                    
-                    # Add metadata
-                    quiz_data['id'] = str(uuid.uuid4())
-                    quiz_data['chapterId'] = chapter_id
-                    quiz_data['difficulty'] = difficulty
-                    quiz_data['duration'] = self._get_duration_for_difficulty(difficulty)
-                    quiz_data['author'] = self.author or 'Course-Ally'
-                    quiz_data['original_language'] = 'en'
+                    if quizz_output_path:
+                        # Use incremental generation with duplicate avoidance
+                        quiz_data = self.generate_quiz_incrementally(
+                            chapter_file,
+                            quizz_output_path,
+                            difficulty,
+                            chapter_id
+                        )
+                    else:
+                        # Fallback to old method if no output path provided
+                        # Load existing questions to avoid duplicates even in fallback mode
+                        existing_questions = []
+                        quiz_data = self._generate_quiz_with_claude_avoiding_duplicates(
+                            chapter_content, 
+                            chapter_file.stem, 
+                            difficulty,
+                            existing_questions
+                        )
+                        
+                        # Add metadata
+                        quiz_data['id'] = str(uuid.uuid4())
+                        quiz_data['chapterId'] = chapter_id
+                        quiz_data['difficulty'] = difficulty
+                        quiz_data['duration'] = self._get_duration_for_difficulty(difficulty)
+                        quiz_data['author'] = self.author or 'Course-Ally'
+                        quiz_data['original_language'] = 'en'
                     
                     all_quizzes.append(quiz_data)
+                    print(f"✅ Generated and saved {difficulty} question {i+1}/4 for chapter {chapter_id}")
                     
                 except Exception as e:
                     print(f"⚠️  Warning: Failed to generate {difficulty} question {i+1}: {e}")
                     continue
         
         return all_quizzes
+
+    def generate_quiz_incrementally(self, chapter_file: Path, quizz_output_path: Path, difficulty: str, chapter_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Generate a single quiz question incrementally, checking for existing questions to avoid duplicates.
+        
+        Args:
+            chapter_file: Path to the chapter markdown file
+            quizz_output_path: Path to the quizz directory where questions are saved
+            difficulty: Difficulty level ('easy', 'intermediate', 'hard')
+            chapter_id: Optional chapter ID to associate with the quiz
+            
+        Returns:
+            Dictionary containing the generated quiz data
+        """
+        # Read chapter content
+        try:
+            chapter_content = chapter_file.read_text(encoding='utf-8')
+        except Exception as e:
+            raise Exception(f"Error reading chapter file: {e}")
+        
+        # Extract chapter ID from content using <chapterId> tag
+        if not chapter_id:
+            chapter_id = self._extract_chapter_id(chapter_content)
+        
+        # Load existing questions for this chapter to avoid duplicates
+        existing_questions = self._load_existing_questions_for_chapter(quizz_output_path, chapter_id)
+        
+        # Generate quiz using Claude with existing questions context
+        quiz_data = self._generate_quiz_with_claude_avoiding_duplicates(
+            chapter_content, 
+            chapter_file.stem, 
+            difficulty, 
+            existing_questions
+        )
+        
+        # Add metadata
+        quiz_data['id'] = str(uuid.uuid4())
+        quiz_data['chapterId'] = chapter_id
+        quiz_data['difficulty'] = difficulty
+        quiz_data['duration'] = self._get_duration_for_difficulty(difficulty)
+        quiz_data['author'] = self.author or 'Course-Ally'
+        quiz_data['original_language'] = 'en'
+        
+        # Get next quiz number and save immediately
+        existing_quizzes = [d for d in quizz_output_path.iterdir() if d.is_dir() and d.name.isdigit()]
+        existing_numbers = [int(d.name) for d in existing_quizzes]
+        next_number = max(existing_numbers, default=0) + 1
+        quiz_number_str = f"{next_number:03d}"
+        
+        # Save the quiz immediately
+        self.save_quiz_files(quiz_data, quizz_output_path, quiz_number_str)
+        
+        return quiz_data
     
     def _get_duration_for_difficulty(self, difficulty: str) -> int:
         """Get duration in seconds based on difficulty."""
@@ -111,6 +183,68 @@ class QuizGenerator:
         if match:
             return match.group(1).strip()
         return None
+
+    def _load_existing_questions_for_chapter(self, quizz_path: Path, chapter_id: str) -> List[Dict[str, str]]:
+        """
+        Load existing questions for a specific chapter from the quizz directory.
+        
+        Args:
+            quizz_path: Path to the quizz directory
+            chapter_id: The chapter ID to filter questions by
+            
+        Returns:
+            List of dictionaries containing question text and difficulty level
+        """
+        existing_questions = []
+        
+        if not quizz_path.exists():
+            return existing_questions
+            
+        # Iterate through all quiz folders (numbered directories)
+        for quiz_folder in quizz_path.iterdir():
+            if not quiz_folder.is_dir() or not quiz_folder.name.isdigit():
+                continue
+                
+            # Read question.yml to get chapter ID and difficulty
+            question_yml = quiz_folder / 'question.yml'
+            if not question_yml.exists():
+                continue
+                
+            try:
+                with open(question_yml, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    
+                # Extract chapterId and difficulty
+                chapter_match = re.search(r'^chapterId:\s*(.+)$', content, re.MULTILINE)
+                difficulty_match = re.search(r'^difficulty:\s*(.+)$', content, re.MULTILINE)
+                
+                if not chapter_match or chapter_match.group(1).strip() != chapter_id:
+                    continue
+                    
+                difficulty = difficulty_match.group(1).strip() if difficulty_match else 'unknown'
+                
+                # Read en.yml to get the question text
+                en_yml = quiz_folder / 'en.yml'
+                if not en_yml.exists():
+                    continue
+                    
+                with open(en_yml, 'r', encoding='utf-8') as f:
+                    en_content = f.read()
+                    
+                # Extract question text
+                question_match = re.search(r'^question:\s*(.+)$', en_content, re.MULTILINE)
+                if question_match:
+                    question_text = question_match.group(1).strip()
+                    existing_questions.append({
+                        'question': question_text,
+                        'difficulty': difficulty
+                    })
+                    
+            except Exception as e:
+                print(f"⚠️  Warning: Error reading quiz {quiz_folder.name}: {e}")
+                continue
+                
+        return existing_questions
     
     def _generate_quiz_with_claude(self, chapter_content: str, chapter_name: str, difficulty: str, question_number: int) -> Dict[str, Any]:
         """Generate quiz questions using Claude."""
@@ -156,6 +290,124 @@ IMPORTANT:
 - Explanation should thoroughly explain why the correct answer is right and others are wrong
 - For the chapter content provided, focus on key concepts that appear in the material
 - The question should be self-sufficient and MUST NOT have reference to the chapter itself, like "seen in the current chapter"
+
+Return ONLY a JSON object in this exact format:
+{{
+    "question": "Your single-line question here?",
+    "answer": "The correct answer",
+    "wrong_answers": [
+        "First wrong answer",
+        "Second wrong answer",
+        "Third wrong answer"
+    ],
+    "explanation": "Detailed explanation here. Can be multiple sentences and paragraphs."
+}}
+"""
+        
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=20000,
+                temperature=0.7,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            # Extract JSON from response
+            response_text = response.content[0].text
+            
+            # Try to find JSON in the response
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                quiz_data = json.loads(json_match.group())
+                
+                # Clean up any line breaks in question and answers
+                quiz_data['question'] = ' '.join(quiz_data['question'].split())
+                quiz_data['answer'] = ' '.join(quiz_data['answer'].split())
+                quiz_data['wrong_answers'] = [' '.join(ans.split()) for ans in quiz_data['wrong_answers']]
+                
+                return quiz_data
+            else:
+                raise ValueError("No valid JSON found in response")
+                
+        except Exception as e:
+            print(f"⚠️  Error generating quiz: {e}")
+            # Return a fallback quiz
+            return {
+                "question": f"What is a key concept from {chapter_name}?",
+                "answer": "The main concept discussed in the chapter",
+                "wrong_answers": [
+                    "An unrelated concept",
+                    "A different topic",
+                    "An incorrect statement"
+                ],
+                "explanation": "This is a placeholder question. The actual content should be based on the chapter material."
+            }
+
+    def _generate_quiz_with_claude_avoiding_duplicates(self, chapter_content: str, chapter_name: str, difficulty: str, existing_questions: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Generate quiz questions using Claude while avoiding duplicates."""
+        
+        difficulty_instructions = {
+            'easy': """
+- Focus on basic concepts and definitions
+- Test recall of fundamental information
+- Use straightforward language
+- Target key terms and simple relationships""",
+            'intermediate': """
+- Test understanding of relationships between concepts
+- Require application of knowledge to scenarios
+- Focus on processes and procedures
+- Test comprehension beyond basic recall""",
+            'hard': """
+- Test analysis and synthesis of complex concepts
+- Require critical thinking and evaluation
+- Focus on edge cases and nuanced understanding
+- Test ability to apply knowledge to novel situations"""
+        }
+        
+        # Format existing questions for the prompt
+        existing_questions_text = ""
+        if existing_questions:
+            questions_by_difficulty = {}
+            for q in existing_questions:
+                diff = q['difficulty']
+                if diff not in questions_by_difficulty:
+                    questions_by_difficulty[diff] = []
+                questions_by_difficulty[diff].append(q['question'])
+            
+            existing_questions_text = "\n\nEXISTING QUESTIONS FOR THIS CHAPTER (AVOID CREATING SIMILAR OR IDENTICAL QUESTIONS):\n"
+            for diff_level, questions in questions_by_difficulty.items():
+                existing_questions_text += f"\n{diff_level.capitalize()} difficulty:\n"
+                for i, question in enumerate(questions, 1):
+                    existing_questions_text += f"  {i}. {question}\n"
+        
+        prompt = f"""Based on the following chapter content, create a {difficulty} multiple-choice quiz question.
+
+Chapter: {chapter_name}
+
+Content:
+{chapter_content[:8000]}  # Limit content to avoid token limits
+
+Requirements for {difficulty} difficulty:
+{difficulty_instructions[difficulty]}
+{existing_questions_text}
+
+Generate a quiz question with:
+1. A clear, single-line question (no line breaks)
+2. One correct answer (single line)
+3. Three wrong answers that are plausible but clearly incorrect (each on single line)
+4. A 50-word explanation that provide argument why it's true, or reformulate the concept to ease the understanding
+
+IMPORTANT:
+- Keep question and answers on single lines (no line breaks within them)
+- Wrong answers should be believable but definitively incorrect
+- Correct and wrong answer should be roughly the same length
+- Explanation should thoroughly explain why the correct answer is right and others are wrong
+- For the chapter content provided, focus on key concepts that appear in the material
+- The question should be self-sufficient and MUST NOT have reference to the chapter itself, like "seen in the current chapter"
+- AVOID creating questions similar to the existing questions listed above
+- Create a UNIQUE question that tests a different aspect of the material
 
 Return ONLY a JSON object in this exact format:
 {{
