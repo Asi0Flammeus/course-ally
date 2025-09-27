@@ -874,8 +874,8 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
                 click.echo(f'    [{idx}/{len(files_to_process)}] 📊 Found {existing_count} existing quizzes')
                 click.echo(f'    [{idx}/{len(files_to_process)}] 🤖 Generating quiz with Claude...')
             
-            # Generate quizzes (12 total: 4 easy, 4 intermediate, 4 hard)
-            all_quizzes = generator.generate_quizzes_from_file(chapter_file)
+            # Generate quizzes (12 total: 4 easy, 4 intermediate, 4 hard) with incremental saving
+            all_quizzes = generator.generate_quizzes_from_file(chapter_file, quizz_output_path=output_path)
             
             with stats_lock:
                 click.echo(f'    [{idx}/{len(files_to_process)}] 📝 Generated {len(all_quizzes)} quiz questions')
@@ -883,7 +883,7 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
                 if existing_count > 0:
                     click.echo(f'    [{idx}/{len(files_to_process)}] 📈 Will be numbered starting from {existing_count + 1:03d}')
             
-            # Interactive validation for each quiz
+            # Interactive validation for each quiz (questions already saved incrementally)
             validated_quizzes = []
             for quiz_idx, quiz_data in enumerate(all_quizzes, 1):
                 with stats_lock:
@@ -893,8 +893,7 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
                 validated_quiz = generator.validate_quiz_interactively(quiz_data)
                 validated_quizzes.append(validated_quiz)
             
-            # Save all quiz files
-            generator.save_multiple_quizzes(validated_quizzes, output_path, chapter_file.stem)
+            # No need to save again - questions were saved incrementally during generation
             
             file_time = time.time() - file_start_time
             with stats_lock:
