@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Editor - Course Ally</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .course-selector {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .selector-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr auto;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.9em;
+        }
+        
+        .editor-section {
+            display: none;
+            padding: 30px;
+        }
+        
+        .editor-section.active {
+            display: block;
+        }
+        
+        .metadata-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .form-textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            min-height: 120px;
+            resize: vertical;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        
+        .form-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .content-section {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .section-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .language-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        
+        .objectives-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 15px;
+        }
+        
+        .objective-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+        
+        .objective-input {
+            flex: 1;
+        }
+        
+        .btn-remove {
+            background: #dc3545;
+            color: white;
+            padding: 6px 12px;
+            font-size: 0.85em;
+        }
+        
+        .btn-remove:hover {
+            background: #c82333;
+        }
+        
+        .btn-add {
+            background: #28a745;
+            color: white;
+            margin-top: 10px;
+        }
+        
+        .btn-add:hover {
+            background: #218838;
+        }
+        
+        .save-section-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 20px;
+            font-size: 0.95em;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .save-section-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .save-section-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status-message {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-message.active {
+            display: flex;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status-progress {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .progress-details {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .alert.success {
+            border-left: 4px solid #28a745;
+        }
+        
+        .alert.error {
+            border-left: 4px solid #dc3545;
+        }
+        
+        .footer-note {
+            padding: 20px;
+            background: #f8f9fa;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .footer-note strong {
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 Course Editor</h1>
+            <p>Edit course content in English and auto-translate to all languages</p>
+        </div>
+        
+        <div class="course-selector">
+            <div class="selector-grid">
+                <div>
+                    <label class="form-label">Repository</label>
+                    <select id="repo-select" class="form-select">
+                        <option value="">Select Repository</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Course</label>
+                    <select id="course-select" class="form-select" disabled>
+                        <option value="">Select Course</option>
+                    </select>
+                </div>
+                <div style="align-self: flex-end;">
+                    <button id="load-btn" class="btn btn-primary" disabled>
+                        Load Course
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="editor-section" class="editor-section">
+            <div class="metadata-section">
+                <h3 style="margin-bottom: 20px;">Course Metadata</h3>
+                <div class="metadata-grid">
+                    <div>
+                        <label class="form-label">Course Index</label>
+                        <input type="text" id="course-index" class="form-input" placeholder="e.g., btc101">
+                    </div>
+                    <div>
+                        <label class="form-label">Topic</label>
+                        <input type="text" id="topic" class="form-input" placeholder="e.g., bitcoin">
+                    </div>
+                    <div>
+                        <label class="form-label">Subtopic</label>
+                        <input type="text" id="subtopic" class="form-input" placeholder="e.g., essentials">
+                    </div>
+                    <div>
+                        <label class="form-label">Type</label>
+                        <select id="type" class="form-select">
+                            <option value="theory">Theory</option>
+                            <option value="practical">Practical</option>
+                            <option value="video">Video</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Level</label>
+                        <select id="level" class="form-select">
+                            <option value="beginner">Beginner</option>
+                            <option value="intermediate">Intermediate</option>
+                            <option value="advanced">Advanced</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Hours</label>
+                        <input type="number" id="hours" class="form-input" min="1" value="1">
+                    </div>
+                </div>
+                <button class="btn btn-success btn-sm" style="margin-top: 15px;" onclick="saveMetadata()">
+                    💾 Save Metadata
+                </button>
+                <div id="metadata-status" class="status-message"></div>
+            </div>
+            
+            <div class="content-section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">Course Name</span>
+                        <span class="language-indicator">🌍 EN → All Languages</span>
+                    </div>
+                    <button class="save-section-btn" onclick="saveField('name')">
+                        💾 Save & Translate
+                    </button>
+                </div>
+                <input type="text" id="name-en" class="form-input" placeholder="Enter course name in English">
+                <div id="name-status" class="status-message"></div>
+            </div>
+            
+            <div class="content-section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">Course Goal</span>
+                        <span class="language-indicator">🌍 EN → All Languages</span>
+                    </div>
+                    <button class="save-section-btn" onclick="saveField('goal')">
+                        💾 Save & Translate
+                    </button>
+                </div>
+                <textarea id="goal-en" class="form-textarea" placeholder="Enter course goal in English"></textarea>
+                <div id="goal-status" class="status-message"></div>
+            </div>
+            
+            <div class="content-section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">Learning Objectives</span>
+                        <span class="language-indicator">🌍 EN → All Languages</span>
+                    </div>
+                    <button class="save-section-btn" onclick="saveField('objectives')">
+                        💾 Save & Translate
+                    </button>
+                </div>
+                <ul id="objectives-en" class="objectives-list"></ul>
+                <button class="btn btn-add btn-sm" onclick="addObjective('en')">
+                    + Add Objective
+                </button>
+                <div id="objectives-status" class="status-message"></div>
+            </div>
+            
+            <div class="content-section">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">Course Description</span>
+                        <span class="language-indicator">🌍 EN → All Languages</span>
+                    </div>
+                    <button class="save-section-btn" onclick="saveField('description')">
+                        💾 Save & Translate
+                    </button>
+                </div>
+                <textarea id="description-en" class="form-textarea" style="min-height: 200px;" placeholder="Enter course description in English"></textarea>
+                <div id="description-status" class="status-message"></div>
+            </div>
+        </div>
+        
+        <div class="footer-note">
+            <strong>How it works:</strong> Edit content in English and click "Save & Translate" for each section. 
+            The content will be automatically translated and saved to all language files in the course folder.
+        </div>
+    </div>
+    
+    <script>
+        let currentRepo = null;
+        let currentCourse = null;
+        let availableLanguages = [];
+        let originalData = {};
+        
+        async function init() {
+            await loadRepositories();
+        }
+        
+        async function loadRepositories() {
+            try {
+                const response = await fetch('/api/editor/courses');
+                const data = await response.json();
+                
+                const repoSelect = document.getElementById('repo-select');
+                const repos = [...new Set(data.courses.map(c => c.repo))];
+                
+                repos.forEach(repo => {
+                    const option = document.createElement('option');
+                    option.value = repo;
+                    option.textContent = data.courses.find(c => c.repo === repo).repo_name;
+                    repoSelect.appendChild(option);
+                });
+                
+                repoSelect.addEventListener('change', () => loadCourses(data.courses));
+            } catch (error) {
+                showAlert('Failed to load repositories', 'error');
+            }
+        }
+        
+        function loadCourses(allCourses) {
+            const repoSelect = document.getElementById('repo-select');
+            const courseSelect = document.getElementById('course-select');
+            const loadBtn = document.getElementById('load-btn');
+            
+            courseSelect.innerHTML = '<option value="">Select Course</option>';
+            courseSelect.disabled = true;
+            loadBtn.disabled = true;
+            
+            if (!repoSelect.value) return;
+            
+            const courses = allCourses.filter(c => c.repo === repoSelect.value);
+            courses.forEach(course => {
+                const option = document.createElement('option');
+                option.value = course.path;
+                option.textContent = course.name;
+                courseSelect.appendChild(option);
+            });
+            
+            courseSelect.disabled = false;
+            courseSelect.addEventListener('change', () => {
+                loadBtn.disabled = !courseSelect.value;
+            });
+        }
+        
+        async function loadCourse() {
+            const repo = document.getElementById('repo-select').value;
+            const course = document.getElementById('course-select').value;
+            
+            if (!repo || !course) return;
+            
+            currentRepo = repo;
+            currentCourse = course;
+            
+            try {
+                const response = await fetch('/api/editor/load', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ repo, course })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCourseData(data.data);
+                    document.getElementById('editor-section').classList.add('active');
+                } else {
+                    showAlert('Failed to load course: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error loading course: ' + error.message, 'error');
+            }
+        }
+        
+        function displayCourseData(data) {
+            availableLanguages = data.languages || [];
+            originalData = JSON.parse(JSON.stringify(data));
+            
+            // Set metadata
+            document.getElementById('course-index').value = currentCourse;
+            document.getElementById('topic').value = data.metadata.topic || '';
+            document.getElementById('subtopic').value = data.metadata.subtopic || '';
+            document.getElementById('type').value = data.metadata.type || 'theory';
+            document.getElementById('level').value = data.metadata.level || 'beginner';
+            document.getElementById('hours').value = data.metadata.hours || 1;
+            
+            // Set English content
+            const enContent = data.content.en || {};
+            document.getElementById('name-en').value = enContent.name || '';
+            document.getElementById('goal-en').value = enContent.goal || '';
+            document.getElementById('description-en').value = enContent.description || '';
+            
+            // Set objectives
+            const objList = document.getElementById('objectives-en');
+            objList.innerHTML = '';
+            (enContent.objectives || []).forEach(obj => {
+                addObjectiveItem('en', obj);
+            });
+        }
+        
+        function addObjective(lang) {
+            addObjectiveItem(lang, '');
+        }
+        
+        function addObjectiveItem(lang, text) {
+            const objList = document.getElementById(`objectives-${lang}`);
+            const li = document.createElement('li');
+            li.className = 'objective-item';
+            li.innerHTML = `
+                <input type="text" class="form-input objective-input" value="${text}" placeholder="Enter objective">
+                <button class="btn btn-remove" onclick="this.parentElement.remove()">Remove</button>
+            `;
+            objList.appendChild(li);
+        }
+        
+        async function saveMetadata() {
+            const statusEl = document.getElementById('metadata-status');
+            statusEl.className = 'status-message status-progress active';
+            statusEl.innerHTML = '<div class="spinner"></div><span>Saving metadata...</span>';
+            
+            const metadata = {
+                topic: document.getElementById('topic').value,
+                subtopic: document.getElementById('subtopic').value,
+                type: document.getElementById('type').value,
+                level: document.getElementById('level').value,
+                hours: parseInt(document.getElementById('hours').value)
+            };
+            
+            try {
+                const response = await fetch('/api/editor/save-metadata', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo: currentRepo,
+                        course: currentCourse,
+                        new_index: document.getElementById('course-index').value,
+                        metadata: metadata
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusEl.className = 'status-message status-success active';
+                    statusEl.innerHTML = '✅ Metadata saved successfully';
+                    setTimeout(() => statusEl.classList.remove('active'), 3000);
+                } else {
+                    statusEl.className = 'status-message status-error active';
+                    statusEl.innerHTML = `❌ Error: ${data.error}`;
+                }
+            } catch (error) {
+                statusEl.className = 'status-message status-error active';
+                statusEl.innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+        
+        async function saveField(fieldName) {
+            const statusEl = document.getElementById(`${fieldName}-status`);
+            const saveBtn = document.querySelector(`[onclick*="saveField('${fieldName}')"]`);
+            
+            saveBtn.disabled = true;
+            statusEl.className = 'status-message status-progress active';
+            statusEl.innerHTML = '<div class="spinner"></div><span>Translating to all languages...</span>';
+            
+            // Collect field data
+            let fieldData;
+            if (fieldName === 'objectives') {
+                fieldData = [];
+                document.querySelectorAll('#objectives-en .objective-input').forEach(input => {
+                    if (input.value.trim()) {
+                        fieldData.push(input.value.trim());
+                    }
+                });
+            } else {
+                fieldData = document.getElementById(`${fieldName}-en`).value;
+            }
+            
+            try {
+                // Show language progress
+                const langList = availableLanguages.filter(l => l !== 'en').map(l => getLanguageName(l)).join(', ');
+                statusEl.innerHTML = `
+                    <div class="spinner"></div>
+                    <div>
+                        <span>Translating to: ${langList}</span>
+                        <div class="progress-details">This may take a moment...</div>
+                    </div>
+                `;
+                
+                const response = await fetch('/api/editor/save-field', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo: currentRepo,
+                        course: currentCourse,
+                        field: fieldName,
+                        value: fieldData,
+                        languages: availableLanguages
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusEl.className = 'status-message status-success active';
+                    statusEl.innerHTML = `✅ Saved and translated to ${data.translated_count} languages`;
+                    setTimeout(() => statusEl.classList.remove('active'), 5000);
+                } else {
+                    statusEl.className = 'status-message status-error active';
+                    statusEl.innerHTML = `❌ Error: ${data.error}`;
+                }
+            } catch (error) {
+                statusEl.className = 'status-message status-error active';
+                statusEl.innerHTML = `❌ Error: ${error.message}`;
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+        
+        function getLanguageName(code) {
+            const names = {
+                'fr': 'French', 'es': 'Spanish', 'de': 'German', 'it': 'Italian',
+                'pt': 'Portuguese', 'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean',
+                'zh-Hans': 'Chinese', 'ar': 'Arabic', 'hi': 'Hindi', 'cs': 'Czech',
+                'nl': 'Dutch', 'pl': 'Polish', 'tr': 'Turkish', 'vi': 'Vietnamese',
+                'id': 'Indonesian', 'fi': 'Finnish', 'sv': 'Swedish', 'nb-NO': 'Norwegian',
+                'et': 'Estonian', 'fa': 'Persian', 'rn': 'Kirundi', 'si': 'Sinhala',
+                'sw': 'Swahili', 'sr-Latn': 'Serbian', 'zh-Hant': 'Traditional Chinese'
+            };
+            return names[code] || code;
+        }
+        
+        function showAlert(message, type) {
+            const alert = document.createElement('div');
+            alert.className = `alert ${type}`;
+            alert.textContent = message;
+            document.body.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        document.getElementById('load-btn').addEventListener('click', loadCourse);
+        
+        // Initialize
+        init();
+    </script>
+</body>
+</html>

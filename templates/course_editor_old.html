@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Editor - Batch Edit Course Information</title>
+    <style>
+        :root {
+            --primary-orange: #ff6200;
+            --secondary-orange: #ff8533;
+            --light-orange: #ffe6d5;
+            --bg-light: #f8f9fa;
+            --bg-white: #ffffff;
+            --text-dark: #2c3e50;
+            --text-light: #6c757d;
+            --border-color: #e0e0e0;
+            --shadow-sm: 0 2px 10px rgba(0,0,0,0.08);
+            --shadow-md: 0 4px 20px rgba(0,0,0,0.1);
+            --shadow-lg: 0 10px 40px rgba(0,0,0,0.15);
+            --success-green: #28a745;
+            --error-red: #dc3545;
+            --warning-yellow: #ffc107;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            line-height: 1.6;
+            color: var(--text-dark);
+            background: var(--bg-light);
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-white);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--primary-orange);
+        }
+
+        .header-subtitle {
+            color: var(--text-light);
+            font-size: 14px;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        /* Panel Style */
+        .panel {
+            background: var(--bg-white);
+            border-radius: 15px;
+            box-shadow: var(--shadow-md);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .panel-header {
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+
+        .panel-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .panel-description {
+            color: var(--text-light);
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        /* Course Grid */
+        .course-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .course-card {
+            background: var(--bg-white);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .course-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-md);
+            border-color: var(--primary-orange);
+        }
+
+        .course-card.selected {
+            background: var(--light-orange);
+            border-color: var(--primary-orange);
+            box-shadow: var(--shadow-md);
+        }
+
+        .course-card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 8px;
+        }
+
+        .course-card p {
+            font-size: 13px;
+            color: var(--text-light);
+            margin-bottom: 10px;
+        }
+
+        .repo-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background: var(--primary-orange);
+            color: white;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .repo-badge.premium {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-dark);
+            margin-bottom: 8px;
+        }
+
+        .form-input,
+        .form-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+            font-size: 15px;
+            color: var(--text-dark);
+            background: var(--bg-white);
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: var(--primary-orange);
+            box-shadow: 0 0 0 3px rgba(255, 98, 0, 0.1);
+        }
+
+        textarea.form-input {
+            min-height: 100px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        /* Language Tabs */
+        .language-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .language-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-light);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .language-tab:hover {
+            background: var(--bg-light);
+            color: var(--text-dark);
+        }
+
+        .language-tab.active {
+            background: var(--primary-orange);
+            color: white;
+        }
+
+        .language-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -12px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--primary-orange);
+        }
+
+        .language-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .language-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Objectives List */
+        .objectives-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .objective-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .objective-input {
+            flex: 1;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary-orange);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--secondary-orange);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-success {
+            background: var(--success-green);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-danger {
+            background: var(--error-red);
+            color: white;
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-translate {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .btn-translate:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-add {
+            background: transparent;
+            color: var(--primary-orange);
+            border: 2px solid var(--primary-orange);
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        .btn-add:hover {
+            background: var(--primary-orange);
+            color: white;
+        }
+
+        .btn:disabled {
+            background: var(--border-color);
+            color: var(--text-light);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--primary-orange);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: var(--text-light);
+            font-size: 14px;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .alert-icon {
+            font-size: 20px;
+        }
+
+        /* Editor Section */
+        .editor-section {
+            display: none;
+        }
+
+        .editor-section.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        /* Back Button */
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-light);
+            text-decoration: none;
+            font-size: 14px;
+            margin-bottom: 20px;
+            transition: color 0.3s ease;
+        }
+
+        .back-button:hover {
+            color: var(--primary-orange);
+        }
+
+        /* Save Section */
+        .save-section {
+            text-align: center;
+            padding: 30px;
+            background: var(--bg-light);
+            border-radius: 10px;
+            margin-top: 30px;
+        }
+
+        .save-btn {
+            padding: 15px 40px;
+            font-size: 16px;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-light);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-light);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-container">
+            <div>
+                <div class="header-title">
+                    <span>📚</span>
+                    Course Editor
+                </div>
+                <div class="header-subtitle">BEC Course Assistant</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Course Selector Panel -->
+        <div class="panel" id="course-selector-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Select a Course to Edit</h2>
+                <p class="panel-description">Choose a course from either the open-source or premium repository to edit its information.</p>
+            </div>
+            
+            <div class="loading" id="course-loading">
+                <div class="spinner"></div>
+                <p class="loading-text">Loading courses...</p>
+            </div>
+            
+            <div class="course-grid" id="course-grid">
+                <!-- Courses will be loaded here dynamically -->
+            </div>
+        </div>
+
+        <!-- Editor Section -->
+        <div class="editor-section" id="editor-section">
+            <a href="#" class="back-button" onclick="backToSelection(); return false;">
+                <span>←</span> Back to course selection
+            </a>
+            
+            <div id="alerts"></div>
+            
+            <!-- Course Metadata Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">Course Metadata (No Translation Required)</h3>
+                    <p class="panel-description">Edit course settings that apply to all languages.</p>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="course-index">Course Index (Folder Name)</label>
+                    <input type="text" id="course-index" class="form-input" placeholder="e.g., btc101">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="topic">Topic</label>
+                    <select id="topic" class="form-select">
+                            <option value="bitcoin">Bitcoin</option>
+                            <option value="business">Business</option>
+                            <option value="mining">Mining</option>
+                            <option value="protocol">Protocol</option>
+                            <option value="security">Security</option>
+                            <option value="sociology">Sociology</option>
+                            <option value="sovereignty">Sovereignty</option>
+                        </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="subtopic">Subtopic</label>
+                    <input type="text" id="subtopic" class="form-input" placeholder="e.g., bitcoin">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="type">Type</label>
+                    <select id="type" class="form-select">
+                        <option value="theory">Theory</option>
+                        <option value="practice">Practice</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="level">Level</label>
+                    <select id="level" class="form-select">
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="expert">Expert</option>
+                        <option value="wizard">Wizard</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="hours">Estimated Hours</label>
+                    <input type="number" id="hours" class="form-input" min="1" placeholder="e.g., 7">
+                </div>
+            </div>
+
+            <!-- Translatable Content Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">Translatable Content</h3>
+                    <p class="panel-description">Edit course information that needs to be translated for each language.</p>
+                </div>
+                
+                <div class="language-tabs" id="language-tabs">
+                    <!-- Language tabs will be generated here -->
+                </div>
+
+                <div id="language-contents">
+                    <!-- Language-specific content will be generated here -->
+                </div>
+
+                <button class="btn btn-translate" onclick="translateContent()">
+                    <span>🌐</span> Auto-Translate to All Languages
+                </button>
+            </div>
+
+            <!-- Save Section -->
+            <div class="save-section">
+                <button class="btn btn-primary save-btn" id="save-btn" onclick="saveChanges()">
+                    <span>💾</span> Save All Changes
+                </button>
+                <div class="loading" id="save-loading">
+                    <div class="spinner"></div>
+                    <p class="loading-text">Saving changes...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCourse = null;
+        let currentRepo = null;
+        let courseData = {};
+        let availableLanguages = [];
+
+        // Load courses on page load
+        window.addEventListener('DOMContentLoaded', loadCourses);
+
+        async function loadCourses() {
+            const loading = document.getElementById('course-loading');
+            const grid = document.getElementById('course-grid');
+            
+            loading.classList.add('active');
+            
+            try {
+                const response = await fetch('/api/editor/courses');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCourses(data.courses);
+                } else {
+                    showAlert('Failed to load courses: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Error loading courses: ' + error.message, 'error');
+            } finally {
+                loading.classList.remove('active');
+            }
+        }
+
+        function displayCourses(courses) {
+            const grid = document.getElementById('course-grid');
+            grid.innerHTML = '';
+            
+            courses.forEach(course => {
+                const card = document.createElement('div');
+                card.className = 'course-card';
+                card.onclick = () => selectCourse(course);
+                
+                const repoClass = course.repo === 'PREMIUM_REPO' ? 'premium' : '';
+                
+                card.innerHTML = `
+                    <h3>${course.name}</h3>
+                    <p>${course.path}</p>
+                    <span class="repo-badge ${repoClass}">
+                        ${course.repo === 'PREMIUM_REPO' ? 'Premium' : 'Open Source'}
+                    </span>
+                `;
+                
+                grid.appendChild(card);
+            });
+        }
+
+        async function selectCourse(course) {
+            // Remove previous selection
+            document.querySelectorAll('.course-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Add selection to current card
+            event.currentTarget.classList.add('selected');
+            
+            currentCourse = course.path;
+            currentRepo = course.repo;
+            
+            // Load course data
+            await loadCourseData(course);
+            
+            // Hide selector panel and show editor section
+            document.getElementById('course-selector-panel').style.display = 'none';
+            document.getElementById('editor-section').classList.add('active');
+        }
+
+        async function loadCourseData(course) {
+            try {
+                const response = await fetch(`/api/editor/course/${course.repo}/${course.path}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    courseData = data.data;
+                    availableLanguages = data.data.languages || [];
+                    populateEditor();
+                } else {
+                    showAlert('Failed to load course data: ' + data.error, 'error');
+                }
+            } catch (error) {
+                console.error('Error loading course data:', error);
+                showAlert('Error loading course data: ' + error.message, 'error');
+            }
+        }
+
+        function populateEditor() {
+            // Populate metadata fields
+            document.getElementById('course-index').value = currentCourse;
+            document.getElementById('topic').value = courseData.metadata?.topic || 'bitcoin';
+            document.getElementById('subtopic').value = courseData.metadata?.subtopic || '';
+            document.getElementById('type').value = courseData.metadata?.type || 'theory';
+            document.getElementById('level').value = courseData.metadata?.level || 'beginner';
+            document.getElementById('hours').value = courseData.metadata?.hours || '';
+            
+            // Create language tabs
+            const tabsContainer = document.getElementById('language-tabs');
+            tabsContainer.innerHTML = '';
+            
+            const contentsContainer = document.getElementById('language-contents');
+            contentsContainer.innerHTML = '';
+            
+            // Ensure we have languages to work with
+            if (!availableLanguages || availableLanguages.length === 0) {
+                contentsContainer.innerHTML = '<p class="alert alert-error">No language files found for this course.</p>';
+                return;
+            }
+            
+            availableLanguages.forEach((lang, index) => {
+                // Create tab
+                const tab = document.createElement('button');
+                tab.className = 'language-tab';
+                tab.textContent = lang.toUpperCase();
+                tab.onclick = () => switchLanguage(lang);
+                if (index === 0) tab.classList.add('active');
+                tabsContainer.appendChild(tab);
+                
+                // Create content div
+                const content = document.createElement('div');
+                content.className = 'language-content';
+                content.id = `lang-${lang}`;
+                if (index === 0) content.classList.add('active');
+                
+                const langData = courseData.content[lang] || {};
+                
+                content.innerHTML = `
+                    <div class="form-group">
+                        <label class="form-label">Course Name</label>
+                        <input type="text" class="form-input" id="name-${lang}" value="${langData.name || ''}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Goal</label>
+                        <textarea class="form-input" id="goal-${lang}">${langData.goal || ''}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Objectives</label>
+                        <ul class="objectives-list" id="objectives-${lang}">
+                            ${(langData.objectives || []).map((obj, i) => `
+                                <li class="objective-item" data-index="${i}">
+                                    <input type="text" class="form-input objective-input" value="${obj}">
+                                    <button class="btn btn-danger" onclick="removeObjective('${lang}', this)">Remove</button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                        <button class="btn btn-add" onclick="addObjective('${lang}')">+ Add Objective</button>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-input" id="description-${lang}" style="min-height: 200px;">${langData.description || ''}</textarea>
+                    </div>
+                `;
+                
+                contentsContainer.appendChild(content);
+            });
+        }
+
+        function switchLanguage(lang) {
+            // Update tabs
+            document.querySelectorAll('.language-tab').forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.textContent.toLowerCase() === lang.toLowerCase()) {
+                    tab.classList.add('active');
+                }
+            });
+            
+            // Update content
+            document.querySelectorAll('.language-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`lang-${lang}`).classList.add('active');
+        }
+
+        function addObjective(lang) {
+            const list = document.getElementById(`objectives-${lang}`);
+            const li = document.createElement('li');
+            li.className = 'objective-item';
+            const index = list.children.length;
+            li.setAttribute('data-index', index);
+            li.innerHTML = `
+                <input type="text" class="form-input objective-input" value="">
+                <button class="btn btn-danger" onclick="removeObjective('${lang}', this)">Remove</button>
+            `;
+            list.appendChild(li);
+        }
+
+        function removeObjective(lang, button) {
+            button.parentElement.remove();
+        }
+
+        async function translateContent() {
+            const referenceLanguage = 'en';
+            
+            // Check if English tab exists
+            if (!availableLanguages.includes(referenceLanguage)) {
+                showAlert('English (en) content not found for this course', 'error');
+                return;
+            }
+            
+            const refData = collectLanguageData(referenceLanguage);
+            
+            if (!refData.name || !refData.goal) {
+                showAlert('Please fill in the English content first', 'error');
+                return;
+            }
+            
+            const loading = document.createElement('div');
+            loading.className = 'loading active';
+            loading.style.cssText = 'padding: 20px; background: #f8f9fa; border-radius: 8px; margin: 20px 0;';
+            loading.innerHTML = `
+                <h4 style="margin-bottom: 15px;">🌍 Translation Progress</h4>
+                <div id="translation-status" style="margin-bottom: 15px;">
+                    <p><strong>Preparing translation...</strong></p>
+                    <p style="color: #666; font-size: 14px;">Source: English (en)</p>
+                    <p style="color: #666; font-size: 14px;">Target languages: ${availableLanguages.filter(lang => lang !== referenceLanguage).length} languages</p>
+                </div>
+                <div id="language-progress" style="margin-top: 10px;"></div>
+            `;
+            document.getElementById('language-contents').appendChild(loading);
+            
+            // Create progress indicators for each language
+            const langProgress = document.getElementById('language-progress');
+            const targetLangs = availableLanguages.filter(lang => lang !== referenceLanguage);
+            const languageNames = {
+                'fr': 'French', 'es': 'Spanish', 'de': 'German', 'it': 'Italian',
+                'pt': 'Portuguese', 'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean',
+                'zh-Hans': 'Chinese (Simplified)', 'zh-Hant': 'Chinese (Traditional)',
+                'ar': 'Arabic', 'hi': 'Hindi', 'cs': 'Czech', 'nl': 'Dutch',
+                'pl': 'Polish', 'tr': 'Turkish', 'vi': 'Vietnamese', 'id': 'Indonesian',
+                'fi': 'Finnish', 'sv': 'Swedish', 'nb-NO': 'Norwegian', 'et': 'Estonian',
+                'fa': 'Persian', 'rn': 'Kirundi', 'si': 'Sinhala', 'sw': 'Swahili',
+                'sr-Latn': 'Serbian (Latin)'
+            };
+            
+            targetLangs.forEach(lang => {
+                const langDiv = document.createElement('div');
+                langDiv.style.cssText = 'display: flex; align-items: center; margin: 5px 0; padding: 5px;';
+                langDiv.innerHTML = `
+                    <span style="width: 150px; font-size: 14px;">${languageNames[lang] || lang}:</span>
+                    <span id="status-${lang}" style="color: #999;">⏳ Waiting...</span>
+                `;
+                langProgress.appendChild(langDiv);
+            });
+            
+            // Update status message
+            document.getElementById('translation-status').innerHTML = `
+                <p><strong>🔄 Sending content to Claude AI for translation...</strong></p>
+                <p style="color: #666; font-size: 14px;">This may take a moment depending on the number of languages.</p>
+            `;
+            
+            try {
+                const response = await fetch('/api/editor/translate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: refData,
+                        target_languages: availableLanguages.filter(lang => lang !== referenceLanguage)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update status to show we're applying translations
+                    document.getElementById('translation-status').innerHTML = `
+                        <p><strong>✅ Translations received! Applying to forms...</strong></p>
+                    `;
+                    
+                    // Apply translations with progress updates
+                    let completed = 0;
+                    const total = Object.keys(data.translations).length;
+                    
+                    for (const [lang, translation] of Object.entries(data.translations)) {
+                        // Update status for this language
+                        const statusEl = document.getElementById(`status-${lang}`);
+                        if (statusEl) {
+                            statusEl.innerHTML = '🔄 Applying...';
+                            statusEl.style.color = '#007bff';
+                        }
+                        
+                        // Apply the translation
+                        document.getElementById(`name-${lang}`).value = translation.name;
+                        document.getElementById(`goal-${lang}`).value = translation.goal;
+                        document.getElementById(`description-${lang}`).value = translation.description;
+                        
+                        // Update objectives
+                        const objList = document.getElementById(`objectives-${lang}`);
+                        objList.innerHTML = '';
+                        translation.objectives.forEach(obj => {
+                            const li = document.createElement('li');
+                            li.className = 'objective-item';
+                            li.innerHTML = `
+                                <input type="text" class="form-input objective-input" value="${obj}">
+                                <button class="btn btn-remove" onclick="removeObjective('${lang}', ${objList.children.length})">Remove</button>
+                            `;
+                            objList.appendChild(li);
+                        });
+                        
+                        // Mark as completed
+                        if (statusEl) {
+                            statusEl.innerHTML = '✅ Completed';
+                            statusEl.style.color = '#28a745';
+                        }
+                        
+                        completed++;
+                        
+                        // Update overall progress
+                        document.getElementById('translation-status').innerHTML = `
+                            <p><strong>✅ Translation Progress: ${completed}/${total} languages completed</strong></p>
+                        `;
+                    }
+                    
+                    // Final success message
+                    document.getElementById('translation-status').innerHTML = `
+                        <p style="color: #28a745;"><strong>✅ All translations completed successfully!</strong></p>
+                        <p style="color: #666; font-size: 14px;">Total languages translated: ${total}</p>
+                    `;
+                    
+                    showAlert('Content translated successfully!', 'success');
+                } else {
+                    // Update status to show error
+                    document.getElementById('translation-status').innerHTML = `
+                        <p style="color: #dc3545;"><strong>❌ Translation Failed</strong></p>
+                        <p style="color: #666; font-size: 14px;">Error: ${data.error}</p>
+                        <p style="color: #666; font-size: 14px; margin-top: 10px;">Please check your API key configuration and try again.</p>
+                    `;
+                    
+                    // Mark all languages as failed
+                    availableLanguages.filter(lang => lang !== referenceLanguage).forEach(lang => {
+                        const statusEl = document.getElementById(`status-${lang}`);
+                        if (statusEl) {
+                            statusEl.innerHTML = '❌ Failed';
+                            statusEl.style.color = '#dc3545';
+                        }
+                    });
+                    
+                    showAlert('Translation failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                // Update status to show error
+                document.getElementById('translation-status').innerHTML = `
+                    <p style="color: #dc3545;"><strong>❌ Translation Error</strong></p>
+                    <p style="color: #666; font-size: 14px;">Error: ${error.message}</p>
+                    <p style="color: #666; font-size: 14px; margin-top: 10px;">Please check your network connection and try again.</p>
+                `;
+                
+                showAlert('Translation error: ' + error.message, 'error');
+            } finally {
+                // Keep the status visible for 5 seconds before removing
+                setTimeout(() => {
+                    loading.remove();
+                }, 5000);
+            }
+        }
+
+        function collectLanguageData(lang) {
+            const objectives = [];
+            const objList = document.querySelectorAll(`#objectives-${lang} .objective-input`);
+            objList.forEach(input => {
+                if (input.value.trim()) {
+                    objectives.push(input.value.trim());
+                }
+            });
+            
+            const nameEl = document.getElementById(`name-${lang}`);
+            const goalEl = document.getElementById(`goal-${lang}`);
+            const descEl = document.getElementById(`description-${lang}`);
+            
+            return {
+                name: nameEl ? nameEl.value : '',
+                goal: goalEl ? goalEl.value : '',
+                objectives: objectives,
+                description: descEl ? descEl.value : ''
+            };
+        }
+
+        async function saveChanges() {
+            const saveBtn = document.getElementById('save-btn');
+            const loading = document.getElementById('save-loading');
+            
+            saveBtn.disabled = true;
+            loading.classList.add('active');
+            
+            // Show detailed save status
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'save-status';
+            statusDiv.style.cssText = 'padding: 15px; background: #f8f9fa; border-radius: 8px; margin: 15px 0;';
+            statusDiv.innerHTML = `
+                <h4 style="margin-bottom: 10px;">💾 Saving Changes</h4>
+                <div id="save-progress">
+                    <p><strong>Step 1/3:</strong> Collecting form data...</p>
+                </div>
+            `;
+            document.querySelector('.editor-actions').appendChild(statusDiv);
+            
+            // Collect all data
+            const metadata = {
+                topic: document.getElementById('topic').value,
+                subtopic: document.getElementById('subtopic').value,
+                type: document.getElementById('type').value,
+                level: document.getElementById('level').value,
+                hours: parseInt(document.getElementById('hours').value)
+            };
+            
+            const content = {};
+            availableLanguages.forEach(lang => {
+                content[lang] = collectLanguageData(lang);
+            });
+            
+            const newIndex = document.getElementById('course-index').value;
+            
+            // Update progress
+            document.getElementById('save-progress').innerHTML = `
+                <p><strong>Step 2/3:</strong> Sending to server...</p>
+                <p style="color: #666; font-size: 14px;">Content will be automatically translated to all languages</p>
+            `;
+            
+            try {
+                const response = await fetch('/api/editor/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        repo: currentRepo,
+                        course: currentCourse,
+                        new_index: newIndex,
+                        metadata: metadata,
+                        content: content
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update progress to show success
+                    document.getElementById('save-progress').innerHTML = `
+                        <p style="color: #28a745;"><strong>Step 3/3:</strong> ✅ All changes saved successfully!</p>
+                        <p style="color: #666; font-size: 14px;">All language versions have been updated with translations.</p>
+                    `;
+                    
+                    showAlert('Changes saved successfully with translations!', 'success');
+                    
+                    // Clean up status after 3 seconds
+                    setTimeout(() => {
+                        statusDiv.remove();
+                    }, 3000);
+                    
+                    if (newIndex !== currentCourse) {
+                        // Reload courses if index changed
+                        await loadCourses();
+                        document.getElementById('editor-section').classList.remove('active');
+                    }
+                } else {
+                    // Update progress to show error
+                    document.getElementById('save-progress').innerHTML = `
+                        <p style="color: #dc3545;"><strong>❌ Save failed:</strong> ${data.error}</p>
+                    `;
+                    showAlert('Failed to save changes: ' + data.error, 'error');
+                }
+            } catch (error) {
+                // Update progress to show error
+                document.getElementById('save-progress').innerHTML = `
+                    <p style="color: #dc3545;"><strong>❌ Save error:</strong> ${error.message}</p>
+                `;
+                showAlert('Save error: ' + error.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                loading.classList.remove('active');
+                // Keep error status visible, remove success status after delay
+                if (!document.getElementById('save-progress').innerHTML.includes('❌')) {
+                    setTimeout(() => {
+                        if (statusDiv.parentNode) {
+                            statusDiv.remove();
+                        }
+                    }, 3000);
+                }
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertsDiv = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            
+            const icon = type === 'success' ? '✓' : '✗';
+            alert.innerHTML = `
+                <span class="alert-icon">${icon}</span>
+                <span>${message}</span>
+            `;
+            
+            alertsDiv.innerHTML = '';
+            alertsDiv.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        function backToSelection() {
+            document.getElementById('editor-section').classList.remove('active');
+            document.getElementById('course-selector-panel').style.display = 'block';
+            document.querySelectorAll('.course-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            currentCourse = null;
+            currentRepo = null;
+        }
+    </script>
+</body>
+</html>

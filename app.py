@@ -17,6 +17,7 @@ from course_components.chapter_generator import ChapterGenerator
 from course_components.quiz_generator import QuizGenerator
 from course_components.quiz_workflow import QuizWorkflowManager
 from course_components.utils import detect_youtube_url_type
+from course_components.course_editor import CourseEditor
 
 # Load environment variables
 load_dotenv()
@@ -920,6 +921,228 @@ def progress_stream(session_id):
                 break
     
     return Response(generate(), mimetype='text/event-stream')
+
+# ================== Course Editor Routes ==================
+
+@app.route('/course-editor')
+def course_editor_page():
+    """Serve the course editor page"""
+    return render_template('course_editor.html')
+
+@app.route('/api/editor/courses', methods=['GET'])
+def editor_list_courses():
+    """List all courses from both repositories for editing"""
+    try:
+        editor = CourseEditor()
+        courses = editor.list_all_courses()
+        
+        return jsonify({
+            'success': True,
+            'courses': courses,
+            'total': len(courses)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/editor/course/<repo_key>/<course_name>', methods=['GET'])
+def editor_load_course(repo_key, course_name):
+    """Load course data for editing"""
+    try:
+        editor = CourseEditor()
+        course_data = editor.load_course_data(repo_key, course_name)
+        
+        return jsonify({
+            'success': True,
+            'data': course_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/editor/translate', methods=['POST'])
+def editor_translate_content():
+    """Translate course content to target languages"""
+    try:
+        data = request.json
+        content = data.get('content')
+        target_languages = data.get('target_languages', [])
+        
+        if not content or not target_languages:
+            return jsonify({
+                'success': False,
+                'error': 'Missing content or target languages'
+            }), 400
+        
+        editor = CourseEditor()
+        translations = editor.translate_content(content, target_languages)
+        
+        return jsonify({
+            'success': True,
+            'translations': translations
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/editor/save', methods=['POST'])
+def editor_save_course():
+    """Save course changes"""
+    try:
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        new_index = data.get('new_index')
+        metadata = data.get('metadata')
+        content = data.get('content')
+        
+        if not all([repo_key, course_name, new_index, metadata, content]):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required fields'
+            }), 400
+        
+        editor = CourseEditor()
+        result = editor.save_course_data(repo_key, course_name, new_index, metadata, content)
+        
+        return jsonify({
+            'success': result,
+            'message': 'Course updated successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/editor/load', methods=['POST'])
+def editor_load_course_v2():
+    """Load course data for editing"""
+    try:
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        
+        if not repo_key or not course_name:
+            return jsonify({
+                'success': False,
+                'error': 'Repository and course are required'
+            }), 400
+        
+        editor = CourseEditor()
+        course_data = editor.load_course_data(repo_key, course_name)
+        
+        return jsonify({
+            'success': True,
+            'data': course_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/editor/save-metadata', methods=['POST'])
+def editor_save_metadata():
+    """Save only course metadata"""
+    try:
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        new_index = data.get('new_index')
+        metadata = data.get('metadata')
+        
+        if not all([repo_key, course_name, metadata]):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required fields'
+            }), 400
+        
+        editor = CourseEditor()
+        # Just save metadata without touching content
+        result = editor.save_metadata(repo_key, course_name, new_index, metadata)
+        
+        return jsonify({
+            'success': result,
+            'message': 'Metadata saved successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/editor/save-field', methods=['POST'])
+def editor_save_field():
+    """Save and translate a specific field"""
+    try:
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        field_name = data.get('field')
+        field_value = data.get('value')
+        languages = data.get('languages', [])
+        
+        if not all([repo_key, course_name, field_name]):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required fields'
+            }), 400
+        
+        editor = CourseEditor()
+        
+        # Translate ONLY the specific field to all languages
+        target_languages = [lang for lang in languages if lang != 'en']
+        translations_by_lang = {}
+        
+        if target_languages:
+            if editor.client:
+                # Use the optimized single-field translation
+                field_translations = editor.translate_single_field(field_name, field_value, target_languages)
+                
+                # Convert to format expected by update_field
+                for lang, translated_value in field_translations.items():
+                    if field_name == 'objectives':
+                        translations_by_lang[lang] = {
+                            'objectives': translated_value if isinstance(translated_value, list) else []
+                        }
+                    else:
+                        translations_by_lang[lang] = {
+                            field_name: translated_value
+                        }
+            else:
+                print("Warning: Anthropic client not configured, translations skipped")
+        
+        # Update only the specific field in each language file
+        result = editor.update_field(repo_key, course_name, field_name, field_value, translations_by_lang)
+        
+        # Debug logging
+        print(f"Field: {field_name}")
+        print(f"Value type: {type(field_value)}")
+        print(f"Target languages: {target_languages}")
+        print(f"Translations received: {len(translations_by_lang)} languages")
+        
+        return jsonify({
+            'success': result,
+            'translated_count': len(translations_by_lang),
+            'message': f'{field_name} saved and translated successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/course-editor')
+def course_editor():
+    """Render the improved course editor page"""
+    return render_template('course_editor.html')
 
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, port=5000)
