@@ -11,9 +11,22 @@
             box-sizing: border-box;
         }
         
+        :root {
+            --primary-orange: #FF6B35;
+            --dark-orange: #FF5722;
+            --light-orange: #FFE0D6;
+            --text-dark: #2C3E50;
+            --text-light: #7F8C8D;
+            --bg-white: #FFFFFF;
+            --bg-light: #F8F9FA;
+            --border-color: #E1E8ED;
+            --success-green: #27AE60;
+            --error-red: #E74C3C;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--bg-white) 0%, var(--bg-light) 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -28,19 +41,21 @@
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: var(--bg-white);
+            color: var(--text-dark);
             padding: 30px;
             text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         }
         
         .header h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
+            color: var(--primary-orange);
         }
         
         .header p {
-            opacity: 0.9;
+            color: var(--text-light);
             font-size: 1.1em;
         }
         
@@ -81,7 +96,7 @@
         
         .form-select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--primary-orange);
         }
         
         .btn {
@@ -97,13 +112,14 @@
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-orange);
             color: white;
         }
         
         .btn-primary:hover {
+            background: var(--dark-orange);
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 10px 20px rgba(255, 107, 53, 0.3);
         }
         
         .btn-secondary {
@@ -112,8 +128,12 @@
         }
         
         .btn-success {
-            background: #28a745;
+            background: var(--success-green);
             color: white;
+        }
+        
+        .btn-success:hover {
+            background: #229e39;
         }
         
         .btn-sm {
@@ -154,7 +174,7 @@
         
         .form-input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--primary-orange);
         }
         
         .form-textarea {
@@ -171,7 +191,7 @@
         
         .form-textarea:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--primary-orange);
         }
         
         .content-section {
@@ -202,8 +222,8 @@
             align-items: center;
             gap: 8px;
             padding: 5px 12px;
-            background: #e8f5e9;
-            color: #2e7d32;
+            background: var(--light-orange);
+            color: var(--dark-orange);
             border-radius: 20px;
             font-size: 0.9em;
             font-weight: 600;
@@ -238,28 +258,33 @@
         }
         
         .btn-add {
-            background: #28a745;
+            background: var(--success-green);
             color: white;
             margin-top: 10px;
         }
         
         .btn-add:hover {
-            background: #218838;
+            background: #229e39;
         }
         
         .save-section-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--primary-orange);
             color: white;
             padding: 8px 20px;
             font-size: 0.95em;
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
         }
         
         .save-section-btn:hover {
+            background: var(--dark-orange);
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 5px 15px rgba(255, 107, 53, 0.3);
         }
         
         .save-section-btn:disabled {
@@ -308,8 +333,8 @@
         .spinner {
             width: 20px;
             height: 20px;
-            border: 3px solid rgba(102, 126, 234, 0.3);
-            border-top-color: #667eea;
+            border: 3px solid rgba(255, 107, 53, 0.3);
+            border-top-color: var(--primary-orange);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -342,7 +367,7 @@
         }
         
         .alert.success {
-            border-left: 4px solid #28a745;
+            border-left: 4px solid var(--success-green);
         }
         
         .alert.error {
@@ -358,7 +383,7 @@
         }
         
         .footer-note strong {
-            color: #667eea;
+            color: var(--primary-orange);
         }
     </style>
 </head>
