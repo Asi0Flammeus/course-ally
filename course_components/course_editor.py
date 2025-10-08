@@ -116,8 +116,10 @@ class CourseEditor:
         if isinstance(d.get("objectives"), list):
             new_objs = []
             for x in d["objectives"]:
-                if isinstance(x, str) and "\n" in x:
-                    new_objs.append(LiteralStr(x))
+                if isinstance(x, str):
+                    # Remove any internal newlines and extra whitespace from objectives
+                    cleaned = " ".join(x.split())
+                    new_objs.append(cleaned)
                 else:
                     new_objs.append(x)
             d["objectives"] = new_objs
@@ -128,6 +130,7 @@ class CourseEditor:
             allow_unicode=True,
             sort_keys=False,
             default_flow_style=False,
+            width=float('inf')  # Prevent line wrapping for long objectives
         ).rstrip()
         return f"---\n{dumped}\n---\n"
 
@@ -456,10 +459,15 @@ Objectives to translate:
 
 Target languages: {languages_list}
 
+IMPORTANT:
+- Each objective must be a SINGLE line (no line breaks within objectives)
+- Keep objectives concise and on one line
+- Remove any internal newlines or formatting
+
 Return a JSON object where each language maps to an array of translated objectives:
 {{
-    "fr": ["Objectif 1", "Objectif 2"],
-    "es": ["Objetivo 1", "Objetivo 2"]
+    "fr": ["Objectif 1 complet sur une seule ligne", "Objectif 2 complet sur une seule ligne"],
+    "es": ["Objetivo 1 completo en una sola línea", "Objetivo 2 completo en una sola línea"]
 }}"""
             else:
                 prompt = f"""Translate the following {field_type} from English to multiple languages.
