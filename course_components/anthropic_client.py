@@ -32,7 +32,7 @@ class AnthropicClient:
         self.client = Anthropic(api_key=self.api_key)
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.model = "claude-sonnet-4-20250514"
+        self.model = "claude-sonnet-4-5-20250929"
     
     def generate_text(
         self, 
