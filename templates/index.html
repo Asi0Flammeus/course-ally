@@ -1068,6 +1068,58 @@
                 <h3 class="feature-title">Course Editor</h3>
                 <p class="feature-description">Batch edit course information with automatic translation support.</p>
             </div>
+            <div class="feature-card" onclick="openFeature('download-video')">
+                <div class="feature-icon">📥</div>
+                <h3 class="feature-title">Download Videos</h3>
+                <p class="feature-description">Download YouTube videos or playlists as MP4 files to a local folder.</p>
+            </div>
+        </div>
+
+        <!-- Download Video Panel -->
+        <div id="download-video-panel" class="feature-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">
+                    <span>📥</span>
+                    Download Videos
+                </h2>
+                <button class="close-panel" onclick="closeFeature('download-video')">✕</button>
+            </div>
+            
+            <form id="download-video-form">
+                <div class="form-group">
+                    <label class="form-label">YouTube Video or Playlist URL</label>
+                    <input type="text" class="form-input" id="video-download-url" 
+                           placeholder="https://www.youtube.com/watch?v=... or playlist URL" required>
+                    <div class="form-hint">Enter a YouTube video URL or playlist URL to download as MP4</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Subfolder Name (Optional)</label>
+                    <input type="text" class="form-input" id="video-download-subfolder" 
+                           placeholder="e.g., my-videos">
+                    <div class="form-hint">Videos will be saved in outputs/videos/[subfolder]</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <span>📥</span>
+                    Download Video(s)
+                </button>
+            </form>
+            
+            <div id="download-video-progress" class="progress-section">
+                <div class="progress-header">
+                    <div class="spinner"></div>
+                    <span>Processing...</span>
+                    <button class="btn btn-secondary cancel-btn" onclick="cancelProcess('download-video')" style="margin-left: auto; display: none;">
+                        <span>🛑</span>
+                        Cancel
+                    </button>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div class="progress-messages"></div>
+            </div>
         </div>
 
         <!-- Playlist to Markdown Panel -->
@@ -1786,6 +1838,36 @@
                 
                 const result = await response.json();
                 handleProgress(result.session_id, 'create-chapters-progress', 'create-chapters');
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            } finally {
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('download-video-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            
+            const data = {
+                video_url: document.getElementById('video-download-url').value,
+                subfolder: document.getElementById('video-download-subfolder').value || null
+            };
+            
+            try {
+                const response = await fetch('/api/download-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                handleProgress(result.session_id, 'download-video-progress', 'download-video');
             } catch (error) {
                 console.error('Error:', error);
                 alert('An error occurred. Please try again.');

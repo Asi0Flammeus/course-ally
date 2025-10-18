@@ -343,6 +343,87 @@ URL: {video_url}
     
     return jsonify({"session_id": session_id})
 
+@app.route('/api/download-video', methods=['POST'])
+def download_video():
+    """Download YouTube video or playlist as MP4"""
+    data = request.json
+    video_url = data.get('video_url')
+    subfolder = data.get('subfolder', None)
+    
+    session_id = create_progress_queue()
+    active_processes[session_id] = {'cancelled': False}
+    
+    def process():
+        try:
+            if active_processes.get(session_id, {}).get('cancelled', False):
+                return
+                
+            send_progress(session_id, "🔍 Analyzing YouTube URL...", "processing", 5)
+            
+            downloader = YouTubeDownloader()
+            
+            # Set up output directory
+            base_path = Path('outputs') / 'videos'
+            if subfolder:
+                output_path = base_path / subfolder
+            else:
+                output_path = base_path
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            if active_processes.get(session_id, {}).get('cancelled', False):
+                return
+            
+            # Determine if it's a playlist or single video
+            is_playlist = 'list=' in video_url or 'playlist' in video_url.lower()
+            
+            if is_playlist:
+                send_progress(session_id, "🎬 Detected playlist - preparing to download all videos...", "processing", 10)
+                
+                # Download progress callback
+                def download_progress(message):
+                    if not active_processes.get(session_id, {}).get('cancelled', False):
+                        send_progress(session_id, message, "processing", 50)
+                
+                # Use the new playlist download method
+                stats = downloader.download_playlist_videos(video_url, str(output_path), progress_callback=download_progress)
+                
+                if active_processes.get(session_id, {}).get('cancelled', False):
+                    return
+                
+                # Success message with statistics
+                summary = f"✅ Download Complete! Total: {stats['total']} | ✅ Success: {stats['successful']} | ⏭️ Skipped: {stats['skipped']}"
+                if stats['failed'] > 0:
+                    summary += f" | ⚠️ Failed: {stats['failed']}"
+                send_progress(session_id, summary, "success", 100)
+                
+            else:
+                send_progress(session_id, "🎥 Detected single video - starting download...", "processing", 10)
+                
+                # Download progress callback
+                def download_progress(message):
+                    if not active_processes.get(session_id, {}).get('cancelled', False):
+                        send_progress(session_id, f"📥 {message}", "processing", 50)
+                
+                # Download single video
+                result_path = downloader.download_video(video_url, str(output_path), progress_callback=download_progress)
+                
+                if active_processes.get(session_id, {}).get('cancelled', False):
+                    return
+                
+                send_progress(session_id, f"✅ Video downloaded successfully: {result_path.name if isinstance(result_path, Path) else 'video.mp4'}", "success", 100)
+            
+        except Exception as e:
+            send_progress(session_id, f"❌ Error: {str(e)}", "error", 100)
+        finally:
+            if session_id in active_processes:
+                del active_processes[session_id]
+    
+    # Start processing in background
+    thread = threading.Thread(target=process)
+    thread.start()
+    
+    return jsonify({"session_id": session_id})
+
 @app.route('/api/create-chapters', methods=['POST'])
 def create_chapters():
     """Create chapters from transcripts"""

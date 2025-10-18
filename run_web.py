@@ -36,7 +36,8 @@ directories = [
     'outputs/transcripts',
     'outputs/playlist_to_md', 
     'outputs/chapters',
-    'outputs/quizz'
+    'outputs/quizz',
+    'outputs/videos'
 ]
 
 for dir_path in directories:
