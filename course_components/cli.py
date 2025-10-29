@@ -347,6 +347,317 @@ Words: {word_count} | Characters: {char_count}
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! Happy learning! 🎓')
 
+
+@cli.command('transcribe-local-audio')
+@click.option('--output-dir', '-d', type=click.Path(), default='transcripts',
+              help='Directory to save transcript files.')
+@click.option('--subfolder', '-s', type=str, default=None,
+              help='Optional subfolder name within transcripts directory.')
+@click.option('--format', '-f', type=click.Choice(['txt', 'json']), default='txt',
+              help='Output format for transcripts.')
+@click.option('--max-workers', '-w', type=int, default=4,
+              help='Maximum number of parallel workers for transcription.')
+def transcribe_local_audio(output_dir: str, subfolder: str, format: str, max_workers: int) -> None:
+    """
+    Transcribe local audio files from outputs/audios directory.
+    
+    Allows you to select a subfolder from outputs/audios and transcribe
+    all audio files within it.
+    """
+    start_time = time.time()
+    
+    # Check if outputs/audios directory exists
+    audios_base = Path('outputs/audios')
+    if not audios_base.exists():
+        click.echo("❌ No audios directory found at outputs/audios")
+        click.echo("Please ensure audio files are placed in outputs/audios/[subfolder]/")
+        raise click.Abort()
+    
+    # Get all subfolders in outputs/audios
+    subfolders = [f for f in audios_base.iterdir() if f.is_dir()]
+    if not subfolders:
+        click.echo("❌ No subfolders found in outputs/audios")
+        click.echo("Please create a subfolder and place your audio files there.")
+        raise click.Abort()
+    
+    # Display available subfolders
+    click.echo("📁 Available audio subfolders:")
+    for idx, folder in enumerate(subfolders, 1):
+        # Count audio files (common formats)
+        audio_files = list(folder.glob('*.mp3')) + list(folder.glob('*.wav')) + \
+                     list(folder.glob('*.m4a')) + list(folder.glob('*.ogg')) + \
+                     list(folder.glob('*.flac'))
+        click.echo(f"  {idx}. {folder.name} ({len(audio_files)} audio files)")
+    
+    # Get user selection for subfolder
+    while True:
+        try:
+            choice = click.prompt("\nSelect subfolder number", type=int)
+            if 1 <= choice <= len(subfolders):
+                selected_folder = subfolders[choice - 1]
+                break
+            else:
+                click.echo(f"❌ Please enter a number between 1 and {len(subfolders)}")
+        except click.Abort:
+            raise
+        except:
+            click.echo("❌ Please enter a valid number")
+    
+    # Get all audio files in selected folder (sorted alphabetically)
+    audio_extensions = ['*.mp3', '*.wav', '*.m4a', '*.ogg', '*.flac', '*.MP3', '*.WAV', '*.M4A']
+    all_audio_files = []
+    for ext in audio_extensions:
+        all_audio_files.extend(selected_folder.glob(ext))
+    all_audio_files = sorted(all_audio_files, key=lambda x: x.name.lower())
+    
+    if not all_audio_files:
+        click.echo(f"❌ No audio files found in {selected_folder.name}")
+        click.echo("Supported formats: mp3, wav, m4a, ogg, flac")
+        raise click.Abort()
+    
+    # Ask user to choose between whole subfolder or individual files
+    click.echo(f"\n📄 Found {len(all_audio_files)} audio files in '{selected_folder.name}'")
+    click.echo("1. Process all audio files in subfolder")
+    click.echo("2. Select individual files")
+    
+    while True:
+        try:
+            process_choice = click.prompt("Choose option", type=int)
+            if process_choice in [1, 2]:
+                break
+            else:
+                click.echo("❌ Please enter 1 or 2")
+        except click.Abort:
+            raise
+        except:
+            click.echo("❌ Please enter a valid number")
+    
+    if process_choice == 1:
+        # Process all files
+        files_to_process = all_audio_files
+    else:
+        # Let user select individual files
+        click.echo(f"\n📋 Audio files in '{selected_folder.name}':")
+        for idx, file in enumerate(all_audio_files, 1):
+            # Get file size in MB
+            file_size_mb = file.stat().st_size / (1024 * 1024)
+            click.echo(f"  {idx}. {file.name} ({file_size_mb:.1f} MB)")
+        
+        click.echo("\nEnter file numbers to process (comma-separated, e.g., 1,3,5):")
+        while True:
+            try:
+                file_choices = click.prompt("File numbers").strip()
+                selected_indices = [int(x.strip()) for x in file_choices.split(',')]
+                
+                # Validate all indices
+                if all(1 <= idx <= len(all_audio_files) for idx in selected_indices):
+                    files_to_process = [all_audio_files[idx - 1] for idx in selected_indices]
+                    break
+                else:
+                    click.echo(f"❌ Please enter numbers between 1 and {len(all_audio_files)}")
+            except click.Abort:
+                raise
+            except:
+                click.echo("❌ Please enter valid numbers separated by commas")
+    
+    click.echo(f'\n🎤 Starting local audio transcription...')
+    click.echo(f'📁 Input: {selected_folder.absolute()}')
+    click.echo(f'📝 Files to process: {len(files_to_process)}')
+    
+    # Setup output directory
+    base_path = Path('outputs') / 'transcripts'
+    if subfolder:
+        output_path = base_path / subfolder
+    else:
+        # Use input directory name as subfolder
+        output_path = base_path / selected_folder.name
+    
+    output_path.mkdir(parents=True, exist_ok=True)
+    click.echo(f'📁 Output directory: {output_path.absolute()}')
+    click.echo(f'📋 Output format: {format}')
+    click.echo(f'⚡ Max workers: {max_workers}')
+    click.echo('─' * 60)
+    
+    # Initialize transcription service
+    transcription_service = TranscriptionService()
+    click.echo('✅ Transcription service initialized')
+    
+    transcripts_data = []
+    successful_transcripts = 0
+    failed_transcripts = 0
+    total_words = 0
+    total_characters = 0
+    
+    # Thread-safe lock for updating shared variables
+    stats_lock = threading.Lock()
+    
+    def process_audio_file(file_data):
+        """Process a single audio file: transcribe and save."""
+        idx, audio_file = file_data
+        
+        # Check if already transcribed
+        existing_files = list(output_path.glob(f"*{audio_file.stem}*"))
+        if existing_files:
+            return {
+                'status': 'skipped',
+                'file': audio_file.name,
+                'message': f'Already transcribed: {existing_files[0].name}',
+                'idx': idx
+            }
+        
+        file_start_time = time.time()
+        
+        # Create individual transcription service for thread safety
+        audio_transcription_service = TranscriptionService()
+        
+        # Progress callback
+        def audio_progress(message):
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] {message}')
+        
+        try:
+            with stats_lock:
+                click.echo(f'\n🎤 [{idx}/{len(files_to_process)}] Processing: {audio_file.name}')
+                click.echo(f'    [{idx}/{len(files_to_process)}] 🎧 Transcribing audio...')
+            
+            # Transcribe audio
+            transcript = audio_transcription_service.transcribe(audio_file, progress_callback=audio_progress)
+            
+            # Calculate stats
+            word_count = len(transcript.split())
+            char_count = len(transcript)
+            
+            # Save transcript
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            filename_base = f"{audio_file.stem}_{timestamp}"
+            
+            result_data = {
+                'file': audio_file.name,
+                'transcript': transcript,
+                'word_count': word_count,
+                'character_count': char_count,
+                'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'filename': filename_base
+            }
+            
+            if format == 'txt':
+                transcript_file = output_path / f"{filename_base}.txt"
+                
+                # Add metadata header to txt files
+                metadata_header = f"""# Audio Transcript
+File: {audio_file.name}
+Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
+Words: {word_count} | Characters: {char_count}
+
+{'='*60}
+
+"""
+                
+                transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                with stats_lock:
+                    click.echo(f'    [{idx}/{len(files_to_process)}] ✅ Transcript saved to {transcript_file.name}')
+            else:  # JSON format
+                transcript_file = output_path / f"{filename_base}.json"
+                with open(transcript_file, 'w', encoding='utf-8') as f:
+                    json.dump(result_data, f, indent=2, ensure_ascii=False)
+                with stats_lock:
+                    click.echo(f'    [{idx}/{len(files_to_process)}] ✅ Transcript saved to {transcript_file.name}')
+            
+            file_time = time.time() - file_start_time
+            with stats_lock:
+                click.echo(f'    [{idx}/{len(files_to_process)}] ⏱️  Completed in {file_time:.1f}s ({word_count} words)')
+            
+            return {
+                'status': 'success',
+                'data': result_data,
+                'idx': idx,
+                'file': audio_file.name
+            }
+            
+        except Exception as e:
+            with stats_lock:
+                click.echo(f"    [{idx}/{len(files_to_process)}] ❌ Error processing {audio_file.name}: {e}", err=True)
+            return {
+                'status': 'failed',
+                'file': audio_file.name,
+                'error': str(e),
+                'idx': idx
+            }
+    
+    click.echo('─' * 60)
+    click.echo(f'🚀 Starting parallel processing with {max_workers} workers...')
+    
+    # Filter out already processed files
+    files_to_process_filtered = []
+    for idx, audio_file in enumerate(files_to_process, 1):
+        existing_files = list(output_path.glob(f"*{audio_file.stem}*"))
+        if not existing_files:
+            files_to_process_filtered.append((idx, audio_file))
+        else:
+            click.echo(f'⏭️  [{idx}/{len(files_to_process)}] Skipping - already transcribed: {existing_files[0].name}')
+    
+    if not files_to_process_filtered:
+        click.echo("✅ All audio files already transcribed!")
+    else:
+        click.echo(f'📊 Processing {len(files_to_process_filtered)} audio files in parallel...')
+        
+        # Process audio files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all jobs
+            future_to_file = {executor.submit(process_audio_file, file_data): file_data 
+                            for file_data in files_to_process_filtered}
+            
+            # Process completed jobs as they finish
+            for future in as_completed(future_to_file):
+                result = future.result()
+                
+                if result['status'] == 'success':
+                    with stats_lock:
+                        successful_transcripts += 1
+                        total_words += result['data']['word_count']
+                        total_characters += result['data']['character_count']
+                        if format == 'json':
+                            transcripts_data.append(result['data'])
+                elif result['status'] == 'failed':
+                    with stats_lock:
+                        failed_transcripts += 1
+    
+    # Save JSON summary if requested
+    if format == 'json' and transcripts_data:
+        json_file = output_path / 'audio_transcripts.json'
+        
+        # Add summary metadata to JSON
+        summary_data = {
+            'source_folder': str(selected_folder.absolute()),
+            'extraction_date': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'total_files': len(files_to_process),
+            'successful_transcripts': successful_transcripts,
+            'failed_transcripts': failed_transcripts,
+            'total_words': total_words,
+            'total_characters': total_characters,
+            'transcripts': transcripts_data
+        }
+        
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(summary_data, f, indent=2, ensure_ascii=False)
+        click.echo(f'\n📄 Summary saved to {json_file}')
+    
+    # Final summary
+    total_time = time.time() - start_time
+    click.echo('═' * 60)
+    click.echo('📊 TRANSCRIPTION SUMMARY')
+    click.echo('═' * 60)
+    click.echo(f'✅ Successful transcripts: {successful_transcripts}/{len(files_to_process)}')
+    if failed_transcripts > 0:
+        click.echo(f'❌ Failed transcripts: {failed_transcripts}/{len(files_to_process)}')
+    click.echo(f'📝 Total words transcribed: {total_words:,}')
+    click.echo(f'📄 Total characters: {total_characters:,}')
+    click.echo(f'⏱️  Total processing time: {total_time:.1f}s ({total_time/60:.1f} minutes)')
+    if successful_transcripts > 0:
+        click.echo(f'⚡ Average time per file: {total_time/successful_transcripts:.1f}s')
+    click.echo(f'📁 Output location: {output_path.absolute()}')
+    click.echo(f'✨ All done! Happy transcribing! 🎤')
+
 @cli.command('playlist-to-md')
 @click.option('--subfolder', '-s', type=str, default=None,
               help='Optional subfolder name within playlist_to_md directory.')

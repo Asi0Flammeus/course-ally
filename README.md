@@ -76,6 +76,46 @@ python main.py extract-playlist-transcripts <YOUTUBE_URL> [OPTIONS]
 - `https://www.youtube.com/playlist?list=PLAYLIST_ID` (playlist)
 - `https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID` (playlist)
 
+### 🎤 Transcribe Local Audio Files
+
+Transcribe audio files that are already stored locally on your system.
+
+```bash
+python main.py transcribe-local-audio [OPTIONS]
+```
+
+**Options:**
+
+- `--subfolder, -s`: Optional subfolder in outputs/transcripts
+- `--format, -f`: Output format (txt/json, default: txt)
+- `--max-workers, -w`: Parallel workers (default: 4)
+
+**What it does:**
+
+- **Interactive Subfolder Selection**: Browse and select from available audio subfolders
+- **Flexible File Selection**: Process all files or select specific ones
+- **Parallel Processing**: Transcribe multiple audio files simultaneously
+- **Large File Support**: Automatically chunks audio files >25MB
+- **Format Support**: mp3, wav, m4a, ogg, flac
+- **Progress Tracking**: Real-time updates for each file being processed
+
+**How to use:**
+
+1. Place your audio files in `outputs/audios/[subfolder_name]/`
+2. Run the command
+3. Select the subfolder containing your audio files
+4. Choose to process all files or select specific ones
+5. Transcripts are saved to `outputs/transcripts/[subfolder_name]/`
+
+**Example directory structure:**
+```
+outputs/audios/
+├── pba/                    # Your audio subfolder
+│   ├── lecture1.m4a
+│   ├── lecture2.m4a
+│   └── lecture3.m4a
+```
+
 ### 🔗 Extract Playlist Links
 
 Extract and organize all video links from a YouTube playlist into markdown.
@@ -104,7 +144,10 @@ All outputs are organized in the `outputs/` directory:
 
 ```
 outputs/
-├── transcripts/          # Video transcriptions
+├── audios/              # Local audio files for transcription
+│   ├── subfolder/       # Organize by project/topic
+│   └── *.mp3/*.m4a      # Audio files (mp3, wav, m4a, ogg, flac)
+├── transcripts/         # Video/audio transcriptions
 │   ├── subfolder/       # Optional subfolders
 │   └── *.txt/*.json     # Transcript files
 └── yt_links/            # Playlist link exports

@@ -1181,10 +1181,55 @@
             
             <form id="extract-transcripts-form">
                 <div class="form-group">
-                    <label class="form-label">YouTube URL (Video or Playlist)</label>
-                    <input type="text" class="form-input" id="youtube-url" 
-                           placeholder="https://www.youtube.com/watch?v=... or playlist URL" required>
-                    <div class="form-hint">Works with single videos or entire playlists</div>
+                    <label class="form-label">Transcription Source</label>
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="transcription-source" value="youtube" checked 
+                                   onchange="toggleTranscriptionSource('youtube')" style="margin-right: 0.5rem;">
+                            <span>YouTube URL</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="radio" name="transcription-source" value="local" 
+                                   onchange="toggleTranscriptionSource('local')" style="margin-right: 0.5rem;">
+                            <span>Local Audio Files</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- YouTube URL section -->
+                <div id="youtube-url-section">
+                    <div class="form-group">
+                        <label class="form-label">YouTube URL (Video or Playlist)</label>
+                        <input type="text" class="form-input" id="youtube-url" 
+                               placeholder="https://www.youtube.com/watch?v=... or playlist URL">
+                        <div class="form-hint">Works with single videos or entire playlists</div>
+                    </div>
+                </div>
+                
+                <!-- Local Audio section -->
+                <div id="local-audio-section" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label">Select Audio Subfolder</label>
+                        <select class="form-select" id="audio-subfolder">
+                            <option value="">Loading subfolders...</option>
+                        </select>
+                        <div class="form-hint">Choose a subfolder from outputs/audios/</div>
+                    </div>
+                    
+                    <div class="form-group" id="audio-files-group" style="display: none;">
+                        <label class="form-label">Select Audio Files</label>
+                        <div id="audio-files-list" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 0.5rem; border-radius: 4px; background: #f9f9f9;">
+                            <div style="text-align: center; padding: 1rem; color: #666;">
+                                Select a subfolder first
+                            </div>
+                        </div>
+                        <div class="form-hint">
+                            <label style="cursor: pointer;">
+                                <input type="checkbox" id="select-all-audio" onchange="toggleAllAudioFiles()" style="margin-right: 0.5rem;">
+                                Select All
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="form-group">
@@ -1559,6 +1604,11 @@
             if (savedContributors) {
                 document.getElementById('quiz-contributors').value = savedContributors;
             }
+            
+            // Add event listener for audio subfolder selection
+            document.getElementById('audio-subfolder').addEventListener('change', function(e) {
+                loadAudioFiles(e.target.value);
+            });
         });
         
         // Feature management
@@ -1632,6 +1682,100 @@
                     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }, 100);
             }
+        }
+
+        // Toggle between YouTube and Local Audio transcription
+        function toggleTranscriptionSource(source) {
+            const youtubeSection = document.getElementById('youtube-url-section');
+            const localSection = document.getElementById('local-audio-section');
+            
+            if (source === 'youtube') {
+                youtubeSection.style.display = 'block';
+                localSection.style.display = 'none';
+                document.getElementById('youtube-url').required = true;
+            } else {
+                youtubeSection.style.display = 'none';
+                localSection.style.display = 'block';
+                document.getElementById('youtube-url').required = false;
+                
+                // Load audio subfolders if not already loaded
+                loadAudioSubfolders();
+            }
+        }
+        
+        // Load audio subfolders
+        async function loadAudioSubfolders() {
+            const select = document.getElementById('audio-subfolder');
+            select.innerHTML = '<option value="">Loading...</option>';
+            
+            try {
+                const response = await fetch('/api/audio/list-subfolders');
+                const data = await response.json();
+                
+                if (!data.success || data.subfolders.length === 0) {
+                    select.innerHTML = '<option value="">No audio subfolders found</option>';
+                } else {
+                    select.innerHTML = '<option value="">Select a subfolder...</option>';
+                    data.subfolders.forEach(folder => {
+                        const option = document.createElement('option');
+                        option.value = folder.name;
+                        option.textContent = `${folder.name} (${folder.file_count} files)`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading audio subfolders:', error);
+                select.innerHTML = '<option value="">Error loading subfolders</option>';
+            }
+        }
+        
+        // Load audio files from selected subfolder
+        async function loadAudioFiles(subfolder) {
+            const filesGroup = document.getElementById('audio-files-group');
+            const filesList = document.getElementById('audio-files-list');
+            
+            if (!subfolder) {
+                filesGroup.style.display = 'none';
+                filesList.innerHTML = '<div style="text-align: center; padding: 1rem; color: #666;">Select a subfolder first</div>';
+                return;
+            }
+            
+            filesGroup.style.display = 'block';
+            filesList.innerHTML = '<div style="text-align: center; padding: 1rem; color: #666;">Loading files...</div>';
+            
+            try {
+                const response = await fetch(`/api/audio/list-files?subfolder=${encodeURIComponent(subfolder)}`);
+                const data = await response.json();
+                
+                if (!data.success || data.files.length === 0) {
+                    filesList.innerHTML = '<div style="text-align: center; padding: 1rem; color: #666;">No audio files found</div>';
+                } else {
+                    let html = '';
+                    data.files.forEach((file, index) => {
+                        html += `
+                            <label style="display: block; padding: 0.5rem; cursor: pointer; border-bottom: 1px solid #eee;">
+                                <input type="checkbox" name="audio-file" value="${file.name}" style="margin-right: 0.5rem;">
+                                <span style="font-weight: 500;">${file.name}</span>
+                                <span style="color: #666; font-size: 0.9em; margin-left: 0.5rem;">(${file.size_mb} MB)</span>
+                            </label>
+                        `;
+                    });
+                    filesList.innerHTML = html;
+                    
+                    // Reset select all checkbox
+                    document.getElementById('select-all-audio').checked = false;
+                }
+            } catch (error) {
+                console.error('Error loading audio files:', error);
+                filesList.innerHTML = '<div style="text-align: center; padding: 1rem; color: #666;">Error loading files</div>';
+            }
+        }
+        
+        // Toggle all audio files selection
+        function toggleAllAudioFiles() {
+            const selectAll = document.getElementById('select-all-audio');
+            const checkboxes = document.querySelectorAll('input[name="audio-file"]');
+            checkboxes.forEach(cb => cb.checked = selectAll.checked);
         }
 
         function closeFeature(featureId) {
@@ -1792,19 +1936,51 @@
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
             
-            const data = {
-                youtube_url: document.getElementById('youtube-url').value,
-                subfolder: document.getElementById('transcript-subfolder').value || null,
-                format: document.getElementById('transcript-format').value,
-                max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4
-            };
+            // Check which source is selected
+            const source = document.querySelector('input[name="transcription-source"]:checked').value;
             
             try {
-                const response = await fetch('/api/extract-transcripts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
+                let response, data;
+                
+                if (source === 'youtube') {
+                    // YouTube transcription
+                    data = {
+                        youtube_url: document.getElementById('youtube-url').value,
+                        subfolder: document.getElementById('transcript-subfolder').value || null,
+                        format: document.getElementById('transcript-format').value,
+                        max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4
+                    };
+                    
+                    response = await fetch('/api/extract-transcripts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                } else {
+                    // Local audio transcription
+                    const selectedFiles = Array.from(document.querySelectorAll('input[name="audio-file"]:checked'))
+                        .map(cb => cb.value);
+                    
+                    if (selectedFiles.length === 0) {
+                        alert('Please select at least one audio file');
+                        submitBtn.disabled = false;
+                        return;
+                    }
+                    
+                    data = {
+                        audio_subfolder: document.getElementById('audio-subfolder').value,
+                        selected_files: selectedFiles,
+                        output_subfolder: document.getElementById('transcript-subfolder').value || null,
+                        format: document.getElementById('transcript-format').value,
+                        max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4
+                    };
+                    
+                    response = await fetch('/api/audio/transcribe-local', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                }
                 
                 const result = await response.json();
                 handleProgress(result.session_id, 'extract-transcripts-progress', 'extract-transcripts');

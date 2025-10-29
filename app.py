@@ -968,6 +968,276 @@ def quiz_generate():
         }
     })
 
+
+# ================== Local Audio Transcription Routes ==================
+
+@app.route('/api/audio/list-subfolders', methods=['GET'])
+def audio_list_subfolders():
+    """List available audio subfolders in outputs/audios"""
+    try:
+        audios_base = Path('outputs/audios')
+        if not audios_base.exists():
+            return jsonify({
+                'success': True,
+                'subfolders': []
+            })
+        
+        subfolders = []
+        for folder in audios_base.iterdir():
+            if folder.is_dir():
+                # Count audio files
+                audio_files = []
+                for ext in ['*.mp3', '*.wav', '*.m4a', '*.ogg', '*.flac', '*.MP3', '*.WAV', '*.M4A']:
+                    audio_files.extend(folder.glob(ext))
+                
+                subfolders.append({
+                    'name': folder.name,
+                    'file_count': len(audio_files)
+                })
+        
+        return jsonify({
+            'success': True,
+            'subfolders': sorted(subfolders, key=lambda x: x['name'])
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/audio/list-files', methods=['GET'])
+def audio_list_files():
+    """List audio files in a specific subfolder"""
+    subfolder = request.args.get('subfolder')
+    if not subfolder:
+        return jsonify({'error': 'subfolder parameter required'}), 400
+    
+    try:
+        folder_path = Path('outputs/audios') / subfolder
+        if not folder_path.exists():
+            return jsonify({
+                'success': False,
+                'error': f'Subfolder not found: {subfolder}'
+            }), 404
+        
+        # Get all audio files
+        audio_files = []
+        for ext in ['*.mp3', '*.wav', '*.m4a', '*.ogg', '*.flac', '*.MP3', '*.WAV', '*.M4A']:
+            for audio_file in folder_path.glob(ext):
+                file_size_mb = audio_file.stat().st_size / (1024 * 1024)
+                audio_files.append({
+                    'name': audio_file.name,
+                    'size_mb': round(file_size_mb, 1),
+                    'extension': audio_file.suffix.lower()
+                })
+        
+        # Sort by name
+        audio_files.sort(key=lambda x: x['name'].lower())
+        
+        return jsonify({
+            'success': True,
+            'files': audio_files,
+            'total': len(audio_files)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/audio/transcribe-local', methods=['POST'])
+def transcribe_local_audio():
+    """Transcribe local audio files from outputs/audios"""
+    data = request.json
+    audio_subfolder = data.get('audio_subfolder')
+    selected_files = data.get('selected_files', [])  # List of filenames
+    output_subfolder = data.get('output_subfolder', None)
+    format_type = data.get('format', 'txt')
+    max_workers = data.get('max_workers', 4)
+    
+    if not audio_subfolder:
+        return jsonify({'error': 'audio_subfolder parameter required'}), 400
+    
+    if not selected_files or len(selected_files) == 0:
+        return jsonify({'error': 'selected_files must be a non-empty list'}), 400
+    
+    session_id = create_progress_queue()
+    active_processes[session_id] = {'cancelled': False}
+    
+    def process():
+        try:
+            if active_processes.get(session_id, {}).get('cancelled', False):
+                return
+                
+            send_progress(session_id, "🎤 Starting local audio transcription...", "processing", 5)
+            
+            # Validate audio folder
+            audio_folder = Path('outputs/audios') / audio_subfolder
+            if not audio_folder.exists():
+                send_progress(session_id, f"❌ Audio folder not found: {audio_subfolder}", "error", 100)
+                return
+            
+            # Get audio files to process
+            audio_files = []
+            for filename in selected_files:
+                audio_path = audio_folder / filename
+                if audio_path.exists():
+                    audio_files.append(audio_path)
+                else:
+                    send_progress(session_id, f"⚠️ File not found: {filename}", "warning", 10)
+            
+            if not audio_files:
+                send_progress(session_id, "❌ No valid audio files found", "error", 100)
+                return
+            
+            send_progress(session_id, f"✅ Found {len(audio_files)} audio files to process", "processing", 15)
+            
+            # Set up output directory
+            base_path = Path('outputs') / 'transcripts'
+            if output_subfolder:
+                output_path = base_path / output_subfolder
+            else:
+                output_path = base_path / audio_subfolder
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            send_progress(session_id, f"📁 Saving transcripts to: {output_path.name}/", "processing", 20)
+            send_progress(session_id, f"⚡ Using {max_workers} parallel workers", "processing", 22)
+            
+            # Initialize transcription service
+            transcription_service = TranscriptionService()
+            
+            # Thread-safe counters
+            successful = 0
+            failed = 0
+            skipped = 0
+            total_words = 0
+            stats_lock = threading.Lock()
+            
+            def process_audio_file(file_data):
+                """Process a single audio file"""
+                idx, audio_file = file_data
+                
+                # Check if cancelled
+                if active_processes.get(session_id, {}).get('cancelled', False):
+                    return {'status': 'cancelled'}
+                
+                # Check if already transcribed
+                existing_files = list(output_path.glob(f"*{audio_file.stem}*"))
+                if existing_files:
+                    return {
+                        'status': 'skipped',
+                        'file': audio_file.name,
+                        'message': f'Already transcribed: {existing_files[0].name}'
+                    }
+                
+                try:
+                    # Create individual transcription service for thread safety
+                    audio_transcription = TranscriptionService()
+                    
+                    with stats_lock:
+                        send_progress(session_id, f"🎤 [{idx}/{len(audio_files)}] Transcribing: {audio_file.name}", "processing")
+                    
+                    # Transcribe audio
+                    transcript = audio_transcription.transcribe(audio_file)
+                    
+                    # Calculate stats
+                    word_count = len(transcript.split())
+                    
+                    # Save transcript
+                    timestamp = time.strftime('%Y%m%d_%H%M%S')
+                    filename_base = f"{audio_file.stem}_{timestamp}"
+                    
+                    if format_type == 'txt':
+                        transcript_file = output_path / f"{filename_base}.txt"
+                        
+                        metadata_header = f"""# Audio Transcript
+File: {audio_file.name}
+Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
+Words: {word_count}
+
+{'='*60}
+
+"""
+                        transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                    else:  # JSON format
+                        transcript_file = output_path / f"{filename_base}.json"
+                        transcript_data = {
+                            'file': audio_file.name,
+                            'transcript': transcript,
+                            'word_count': word_count,
+                            'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                        }
+                        with open(transcript_file, 'w', encoding='utf-8') as f:
+                            json.dump(transcript_data, f, indent=2, ensure_ascii=False)
+                    
+                    with stats_lock:
+                        send_progress(session_id, f"✅ [{idx}/{len(audio_files)}] Completed: {audio_file.name} ({word_count} words)", "processing")
+                    
+                    return {
+                        'status': 'success',
+                        'file': audio_file.name,
+                        'word_count': word_count
+                    }
+                    
+                except Exception as e:
+                    with stats_lock:
+                        send_progress(session_id, f"❌ [{idx}/{len(audio_files)}] Error: {audio_file.name} - {str(e)}", "warning")
+                    return {
+                        'status': 'failed',
+                        'file': audio_file.name,
+                        'error': str(e)
+                    }
+            
+            send_progress(session_id, "─" * 60, "processing", 25)
+            send_progress(session_id, "🚀 Starting parallel transcription...", "processing", 30)
+            
+            # Process audio files in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(process_audio_file, (idx, audio_file)): (idx, audio_file)
+                          for idx, audio_file in enumerate(audio_files, 1)}
+                
+                for future in as_completed(futures):
+                    # Check if cancelled
+                    if active_processes.get(session_id, {}).get('cancelled', False):
+                        executor.shutdown(wait=False)
+                        break
+                    
+                    result = future.result()
+                    
+                    with stats_lock:
+                        if result['status'] == 'success':
+                            successful += 1
+                            total_words += result.get('word_count', 0)
+                            percentage = 30 + ((successful + failed + skipped) / len(audio_files)) * 65
+                            send_progress(session_id, f"✅ Progress: {successful}/{len(audio_files)} completed", "processing", percentage)
+                        elif result['status'] == 'failed':
+                            failed += 1
+                        elif result['status'] == 'skipped':
+                            skipped += 1
+            
+            if not active_processes.get(session_id, {}).get('cancelled', False):
+                send_progress(session_id, "═" * 60, "processing", 95)
+                summary = f"✅ Transcription Complete! "
+                summary += f"Success: {successful} | "
+                if skipped > 0:
+                    summary += f"Skipped: {skipped} | "
+                if failed > 0:
+                    summary += f"Failed: {failed} | "
+                summary += f"Total words: {total_words:,}"
+                send_progress(session_id, summary, "success", 100)
+                
+        except Exception as e:
+            send_progress(session_id, f"❌ Error: {str(e)}", "error", 100)
+        finally:
+            if session_id in active_processes:
+                del active_processes[session_id]
+    
+    # Start processing in background
+    thread = threading.Thread(target=process)
+    thread.start()
+    
+    return jsonify({"session_id": session_id})
+
 @app.route('/api/progress/<session_id>')
 def progress_stream(session_id):
     """Server-Sent Events endpoint for progress updates"""

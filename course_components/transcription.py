@@ -49,41 +49,64 @@ class TranscriptionService:
 
     def _split_audio_into_chunks(self, audio_file: Path, temp_dir: Path, progress_callback=None) -> List[Path]:
         """Split audio file into chunks that are under the size limit."""
-        file_size = audio_file.stat().st_size
         duration = self._get_audio_duration(audio_file)
-        
+
+        # Calculate max chunk duration based on target bitrate (128 kbps)
+        # 128 kbps = 16 KB/s, with 80% safety margin for 25 MB limit
+        target_size_mb = self.max_file_size_mb * 0.8  # 20 MB target
+        bitrate_kbps = 128
+        max_chunk_duration = (target_size_mb * 1024 * 8) / bitrate_kbps  # seconds
+
         # Calculate number of chunks needed
-        num_chunks = math.ceil(file_size / self.max_file_size_bytes)
+        num_chunks = math.ceil(duration / max_chunk_duration)
         chunk_duration = duration / num_chunks
         
         if progress_callback:
-            progress_callback(f"    Splitting audio into {num_chunks} chunks (~{chunk_duration:.1f}s each)...")
-        
+            progress_callback(f"Splitting audio into {num_chunks} chunks (~{chunk_duration:.1f}s each)...")
+
         chunk_files = []
         for i in range(num_chunks):
             start_time = i * chunk_duration
+            # Always use .mp3 for chunks since we're re-encoding
             chunk_file = temp_dir / f"chunk_{i:03d}.mp3"
-            
-            # Use ffmpeg to extract chunk
+
+            # Use ffmpeg to extract chunk with re-encoding for compatibility
+            # We re-encode to ensure compatibility across all formats
             cmd = [
                 'ffmpeg', '-i', str(audio_file),
                 '-ss', str(start_time),
                 '-t', str(chunk_duration),
-                '-acodec', 'copy',
+                '-acodec', 'libmp3lame',  # Re-encode to mp3 for universal compatibility
+                '-ab', '128k',  # Reasonable bitrate for transcription
+                '-ar', '16000',  # Whisper API works well with 16kHz
+                '-ac', '1',  # Mono audio for smaller size
                 '-y', str(chunk_file)
             ]
-            
+
             try:
-                subprocess.run(cmd, capture_output=True, check=True)
+                subprocess.run(cmd, capture_output=True, check=True, text=True)
+
+                # Verify chunk size is under limit
+                chunk_size = chunk_file.stat().st_size
+                if chunk_size > self.max_file_size_bytes:
+                    raise RuntimeError(
+                        f"Chunk {i+1} is {chunk_size / (1024 * 1024):.1f} MB, "
+                        f"exceeds {self.max_file_size_mb} MB limit. Try reducing audio quality further."
+                    )
+
                 chunk_files.append(chunk_file)
-                
+
                 if progress_callback:
-                    progress_callback(f"    Created chunk {i+1}/{num_chunks}")
-                    
+                    progress_callback(f"Created chunk {i+1}/{num_chunks} ({chunk_size / (1024 * 1024):.1f} MB)")
+
             except FileNotFoundError:
                 raise RuntimeError("ffmpeg not found. Please install ffmpeg to enable audio chunking for large files.")
             except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"Failed to create chunk {i+1}: {e}")
+                # Provide more detailed error information
+                error_msg = f"Failed to create chunk {i+1}"
+                if e.stderr:
+                    error_msg += f": {e.stderr}"
+                raise RuntimeError(error_msg)
         
         return chunk_files
 
@@ -189,81 +212,81 @@ class TranscriptionService:
         file_size_mb = file_size / (1024 * 1024)
         
         if progress_callback:
-            progress_callback(f"    Preparing audio file ({file_size_mb:.1f} MB) for transcription...")
+            progress_callback(f"Preparing audio file ({file_size_mb:.1f} MB) for transcription...")
 
         # Check if file needs chunking
         if file_size <= self.max_file_size_bytes:
             # File is small enough, transcribe directly
             if progress_callback:
-                progress_callback(f"    File size OK ({file_size_mb:.1f} MB ≤ {self.max_file_size_mb} MB), transcribing directly...")
-            
+                progress_callback(f"File size OK ({file_size_mb:.1f} MB ≤ {self.max_file_size_mb} MB), transcribing directly...")
+
             try:
                 if progress_callback:
-                    progress_callback(f"    Uploading to OpenAI Whisper API...")
-                
+                    progress_callback(f"Uploading to OpenAI Whisper API...")
+
                 transcript = self._transcribe_single_file(audio_path, progress_callback)
-                
+
                 # Format transcript for better readability
                 formatted_transcript = self._format_transcript(transcript)
-                
+
                 if progress_callback:
                     word_count = len(transcript.split())
                     sentence_count = len(formatted_transcript.split('\n'))
-                    progress_callback(f"    Transcription completed ({word_count} words, {sentence_count} sentences)")
+                    progress_callback(f"Transcription completed ({word_count} words, {sentence_count} sentences)")
                 
                 return formatted_transcript
                 
             except Exception as e:
                 if progress_callback:
-                    progress_callback(f"    Transcription failed: {str(e)}")
+                    progress_callback(f"Transcription failed: {str(e)}")
                 raise RuntimeError(f"Transcription failed: {e}") from e
-        
+
         else:
             # File is too large, need to chunk it
             if progress_callback:
-                progress_callback(f"    File too large ({file_size_mb:.1f} MB > {self.max_file_size_mb} MB), chunking required...")
-            
+                progress_callback(f"File too large ({file_size_mb:.1f} MB > {self.max_file_size_mb} MB), chunking required...")
+
             try:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_path = Path(temp_dir)
-                    
+
                     # Split audio into chunks
                     chunk_files = self._split_audio_into_chunks(audio_path, temp_path, progress_callback)
-                    
+
                     # Transcribe each chunk
                     transcripts = []
                     total_words = 0
-                    
+
                     if progress_callback:
-                        progress_callback(f"    Transcribing {len(chunk_files)} chunks...")
-                    
+                        progress_callback(f"Transcribing {len(chunk_files)} chunks...")
+
                     for i, chunk_file in enumerate(chunk_files, 1):
                         if progress_callback:
-                            progress_callback(f"    Processing chunk {i}/{len(chunk_files)}...")
-                        
+                            progress_callback(f"Uploading chunk {i}/{len(chunk_files)} to OpenAI...")
+
                         chunk_transcript = self._transcribe_single_file(chunk_file, progress_callback)
                         transcripts.append(chunk_transcript)
-                        
+
                         chunk_words = len(chunk_transcript.split())
                         total_words += chunk_words
-                        
+
                         if progress_callback:
-                            progress_callback(f"    Chunk {i}/{len(chunk_files)} completed ({chunk_words} words)")
-                    
+                            progress_callback(f"Chunk {i}/{len(chunk_files)} completed ({chunk_words} words)")
+
                     # Combine all transcripts with spaces between chunks
                     full_transcript = " ".join(transcripts)
-                    
+
                     # Format the combined transcript for better readability
                     formatted_transcript = self._format_transcript(full_transcript)
-                    
+
                     if progress_callback:
                         sentence_count = len(formatted_transcript.split('\n'))
-                        progress_callback(f"    All chunks transcribed, combined and formatted ({total_words} words, {sentence_count} sentences)")
-                    
+                        progress_callback(f"All chunks transcribed and combined ({total_words} words, {sentence_count} sentences)")
+
                     return formatted_transcript
-                    
+
             except Exception as e:
                 if progress_callback:
-                    progress_callback(f"    Chunked transcription failed: {str(e)}")
+                    progress_callback(f"Chunked transcription failed: {str(e)}")
                 raise RuntimeError(f"Chunked transcription failed: {e}") from e
 

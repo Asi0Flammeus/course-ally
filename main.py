@@ -69,6 +69,30 @@ def interactive_menu() -> None:
         except Exception as e:
             print(f"Error: {e}")
             sys.exit(1)
+    elif cmd_name == 'transcribe-local-audio':
+        # Collect command arguments
+        print("Transcribe local audio files from outputs/audios/")
+        
+        subfolder = input("Optional subfolder name in outputs/transcripts/ (leave blank for auto): ").strip()
+        format_choice = input("Output format (txt/json) [txt]: ").strip() or 'txt'
+        max_workers = input("Maximum parallel workers [4]: ").strip() or '4'
+        
+        # Build command arguments list
+        args = [cmd_name]
+        
+        if subfolder:
+            args.extend(['-s', subfolder])
+        if format_choice != 'txt':
+            args.extend(['-f', format_choice])
+        if max_workers != '4':
+            args.extend(['-w', max_workers])
+            
+        # Execute the CLI command
+        try:
+            cli.main(args=args, standalone_mode=False)
+        except Exception as e:
+            print(f"Error: {e}")
+            sys.exit(1)
     elif cmd_name == 'create-chapters':
         # Collect command arguments
         print("Create chapters from transcript files")
