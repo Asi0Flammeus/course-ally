@@ -1275,6 +1275,293 @@ def progress_stream(session_id):
 
 # ================== Course Editor Routes ==================
 
+
+# ================== Chapter Reorganization Routes ==================
+
+@app.route('/chapter-reorganizer')
+def chapter_reorganizer_page():
+    """Serve the chapter reorganization page"""
+    return render_template('chapter_reorganizer.html')
+
+@app.route('/api/reorganizer/courses', methods=['GET'])
+def reorganizer_list_courses():
+    """List all courses from both repositories for reorganization"""
+    try:
+        from course_components.course_editor import CourseEditor
+        editor = CourseEditor()
+        courses = editor.list_all_courses()
+        
+        return jsonify({
+            'success': True,
+            'courses': courses,
+            'total': len(courses)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/reorganizer/structure', methods=['POST'])
+def reorganizer_get_structure():
+    """Get course structure (parts and chapters)"""
+    try:
+        from course_components.course_editor import CourseEditor
+        from course_components.chapter_reorganizer import ChapterReorganizer
+        
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        language = data.get('language', 'en')
+        
+        if not repo_key or not course_name:
+            return jsonify({
+                'success': False,
+                'error': 'Repository and course are required'
+            }), 400
+        
+        # Get course path
+        editor = CourseEditor()
+        repo_path = editor._get_repo_path(repo_key)
+        if not repo_path:
+            return jsonify({
+                'success': False,
+                'error': f'Repository {repo_key} not found'
+            }), 404
+        
+        course_path = repo_path / 'courses' / course_name
+        if not course_path.exists():
+            return jsonify({
+                'success': False,
+                'error': f'Course {course_name} not found'
+            }), 404
+        
+        # Read the language file
+        lang_file = course_path / f'{language}.md'
+        if not lang_file.exists():
+            return jsonify({
+                'success': False,
+                'error': f'Language file {language}.md not found'
+            }), 404
+        
+        with open(lang_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Parse structure
+        reorganizer = ChapterReorganizer()
+        structure = reorganizer.parse_course_structure(content)
+        
+        return jsonify({
+            'success': True,
+            'structure': structure,
+            'language': language
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/reorganizer/languages', methods=['POST'])
+def reorganizer_get_languages():
+    """Get available languages for a course"""
+    try:
+        from course_components.course_editor import CourseEditor
+        
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        
+        if not repo_key or not course_name:
+            return jsonify({
+                'success': False,
+                'error': 'Repository and course are required'
+            }), 400
+        
+        # Get course path
+        editor = CourseEditor()
+        repo_path = editor._get_repo_path(repo_key)
+        if not repo_path:
+            return jsonify({
+                'success': False,
+                'error': f'Repository {repo_key} not found'
+            }), 404
+        
+        course_path = repo_path / 'courses' / course_name
+        if not course_path.exists():
+            return jsonify({
+                'success': False,
+                'error': f'Course {course_name} not found'
+            }), 404
+        
+        # Find all language files
+        languages = []
+        for file_path in course_path.iterdir():
+            if file_path.is_file() and file_path.suffix == '.md' and file_path.name != 'presentation.md':
+                languages.append(file_path.stem)
+        
+        languages.sort()
+        # Ensure 'en' is first if it exists
+        if 'en' in languages:
+            languages.remove('en')
+            languages.insert(0, 'en')
+        
+        return jsonify({
+            'success': True,
+            'languages': languages
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/reorganizer/preview', methods=['POST'])
+def reorganizer_preview_operations():
+    """Preview reorganization operations without saving"""
+    try:
+        from course_components.course_editor import CourseEditor
+        from course_components.chapter_reorganizer import ChapterReorganizer, Operation
+        
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        language = data.get('language', 'en')
+        operations_data = data.get('operations', [])
+        
+        if not repo_key or not course_name:
+            return jsonify({
+                'success': False,
+                'error': 'Repository and course are required'
+            }), 400
+        
+        # Get course path
+        editor = CourseEditor()
+        repo_path = editor._get_repo_path(repo_key)
+        if not repo_path:
+            return jsonify({
+                'success': False,
+                'error': f'Repository {repo_key} not found'
+            }), 404
+        
+        course_path = repo_path / 'courses' / course_name
+        lang_file = course_path / f'{language}.md'
+        
+        if not lang_file.exists():
+            return jsonify({
+                'success': False,
+                'error': f'Language file {language}.md not found'
+            }), 404
+        
+        # Read content
+        with open(lang_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Parse operations
+        operations = []
+        for op_data in operations_data:
+            operations.append(Operation(
+                action=op_data.get('action'),
+                source_id=op_data.get('source_id'),
+                target_id=op_data.get('target_id')
+            ))
+        
+        # Validate operations
+        reorganizer = ChapterReorganizer()
+        validation_errors = reorganizer.validate_operations(content, operations)
+        
+        if validation_errors:
+            return jsonify({
+                'success': False,
+                'validation_errors': validation_errors
+            }), 400
+        
+        # Apply operations to get preview
+        new_content = reorganizer.apply_operations(content, operations)
+        new_structure = reorganizer.parse_course_structure(new_content)
+        
+        return jsonify({
+            'success': True,
+            'new_structure': new_structure,
+            'operations_count': len(operations)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/reorganizer/apply', methods=['POST'])
+def reorganizer_apply_operations():
+    """Apply reorganization operations to course files"""
+    try:
+        from course_components.course_editor import CourseEditor
+        from course_components.chapter_reorganizer import ChapterReorganizer, Operation
+        
+        data = request.json
+        repo_key = data.get('repo')
+        course_name = data.get('course')
+        operations_data = data.get('operations', [])
+        target_languages = data.get('languages', ['en'])  # Languages to apply to
+        
+        if not repo_key or not course_name:
+            return jsonify({
+                'success': False,
+                'error': 'Repository and course are required'
+            }), 400
+        
+        if not operations_data:
+            return jsonify({
+                'success': False,
+                'error': 'No operations provided'
+            }), 400
+        
+        # Get course path
+        editor = CourseEditor()
+        repo_path = editor._get_repo_path(repo_key)
+        if not repo_path:
+            return jsonify({
+                'success': False,
+                'error': f'Repository {repo_key} not found'
+            }), 404
+        
+        course_path = repo_path / 'courses' / course_name
+        if not course_path.exists():
+            return jsonify({
+                'success': False,
+                'error': f'Course {course_name} not found'
+            }), 404
+        
+        # Parse operations
+        operations = []
+        for op_data in operations_data:
+            operations.append(Operation(
+                action=op_data.get('action'),
+                source_id=op_data.get('source_id'),
+                target_id=op_data.get('target_id')
+            ))
+        
+        # Apply operations to course
+        reorganizer = ChapterReorganizer()
+        results = reorganizer.reorganize_course(
+            course_path=course_path,
+            operations=operations,
+            language_filter=target_languages
+        )
+        
+        return jsonify({
+            'success': results['success'],
+            'files_processed': results['files_processed'],
+            'files_failed': results['files_failed'],
+            'errors': results['errors'],
+            'message': f"Successfully processed {results['files_processed']} files"
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/course-editor')
 def course_editor_page():
     """Serve the course editor page"""

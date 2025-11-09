@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chapter Reorganizer - Course Ally</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary-orange: #FF6B35;
+            --dark-orange: #FF5722;
+            --light-orange: #FFE0D6;
+            --text-dark: #2C3E50;
+            --text-light: #7F8C8D;
+            --bg-white: #FFFFFF;
+            --bg-light: #F8F9FA;
+            --border-color: #E1E8ED;
+            --success-green: #27AE60;
+            --error-red: #E74C3C;
+            --warning-yellow: #F39C12;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, var(--bg-white) 0%, var(--bg-light) 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+        
+        .header {
+            background: var(--bg-white);
+            color: var(--text-dark);
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            color: var(--primary-orange);
+        }
+        
+        .header p {
+            color: var(--text-light);
+            font-size: 1.1em;
+        }
+        
+        .course-selector {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .selector-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr auto;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        
+        .form-select:focus {
+            outline: none;
+            border-color: var(--primary-orange);
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: var(--primary-orange);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: var(--dark-orange);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(255, 107, 53, 0.3);
+        }
+        
+        .btn-success {
+            background: var(--success-green);
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background: #229e39;
+            transform: translateY(-2px);
+        }
+        
+        .btn-warning {
+            background: var(--warning-yellow);
+            color: white;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .reorganizer-section {
+            display: none;
+            padding: 30px;
+        }
+        
+        .reorganizer-section.active {
+            display: block;
+        }
+        
+        .toolbar {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .toolbar-left {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .structure-container {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            min-height: 400px;
+            padding: 20px;
+        }
+        
+        .part-section {
+            background: #f9f9f9;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        
+        .part-section:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .part-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .part-header:hover {
+            background: #f8f8f8;
+        }
+        
+        .part-title {
+            font-weight: 700;
+            font-size: 1.2em;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .part-badge {
+            background: var(--light-orange);
+            color: var(--dark-orange);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        
+        .part-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-icon {
+            padding: 6px 12px;
+            font-size: 0.85em;
+            background: #e0e0e0;
+            color: #333;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-icon:hover {
+            background: #d0d0d0;
+            transform: scale(1.05);
+        }
+        
+        .btn-delete {
+            background: #fee;
+            color: #c00;
+        }
+        
+        .btn-delete:hover {
+            background: #fcc;
+        }
+        
+        .chapters-list {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+        
+        .chapter-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            transition: all 0.2s;
+        }
+        
+        .chapter-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-color: var(--primary-orange);
+        }
+        
+        .chapter-item.dragging {
+            opacity: 0.5;
+            transform: rotate(2deg);
+        }
+        
+        .chapter-item.drag-over {
+            border-top: 3px solid var(--primary-orange);
+            margin-top: 10px;
+        }
+        
+        .chapter-title {
+            font-weight: 600;
+            color: #444;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chapter-number {
+            background: var(--primary-orange);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            font-weight: 700;
+        }
+        
+        .orphan-chapters {
+            background: #fff8e1;
+            border: 2px dashed var(--warning-yellow);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .orphan-header {
+            font-weight: 700;
+            color: var(--warning-yellow);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 4em;
+            margin-bottom: 15px;
+        }
+        
+        .operations-panel {
+            background: #f0f8ff;
+            border: 2px solid #b3d9ff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .operations-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .operations-title {
+            font-weight: 700;
+            font-size: 1.1em;
+            color: #0066cc;
+        }
+        
+        .operation-item {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #0066cc;
+        }
+        
+        .operation-text {
+            font-size: 0.95em;
+            color: #333;
+        }
+        
+        .btn-remove-op {
+            background: #fee;
+            color: #c00;
+            padding: 4px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .btn-close {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+        
+        .btn-close:hover {
+            color: #333;
+        }
+        
+        .status-message {
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-message.active {
+            display: flex;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status-progress {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 107, 53, 0.3);
+            border-top-color: var(--primary-orange);
+            border-radius: 50%);
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .language-selector {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .language-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .language-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .language-checkbox:hover {
+            background: var(--light-orange);
+        }
+        
+        .language-checkbox input {
+            cursor: pointer;
+        }
+        
+        .help-box {
+            background: #fffbea;
+            border: 1px solid #ffe4a0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .help-title {
+            font-weight: 700;
+            color: #8b6914;
+            margin-bottom: 8px;
+        }
+        
+        .help-text {
+            color: #8b6914;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 Chapter Reorganizer</h1>
+            <p>Move, reorder, and delete chapters and parts with a smooth drag-and-drop interface</p>
+        </div>
+        
+        <div class="course-selector">
+            <div class="selector-grid">
+                <div>
+                    <label class="form-label">Repository</label>
+                    <select id="repo-select" class="form-select">
+                        <option value="">Select Repository</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Course</label>
+                    <select id="course-select" class="form-select" disabled>
+                        <option value="">Select Course</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Language</label>
+                    <select id="language-select" class="form-select" disabled>
+                        <option value="">Select Language</option>
+                    </select>
+                </div>
+                <div style="align-self: flex-end;">
+                    <button id="load-btn" class="btn btn-primary" disabled>
+                        Load Structure
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="reorganizer-section" class="reorganizer-section">
+            <div class="help-box">
+                <div class="help-title">💡 How to use:</div>
+                <div class="help-text">
+                    • <strong>Move Chapters:</strong> Drag and drop chapters to reorder them<br>
+                    • <strong>Delete Parts:</strong> Click the delete button (🗑️) on a part header<br>
+                    • <strong>Preview:</strong> See the new structure before applying changes<br>
+                    • <strong>Apply:</strong> Apply changes to selected language files
+                </div>
+            </div>
+            
+            <div class="toolbar">
+                <div class="toolbar-left">
+                    <button id="preview-btn" class="btn btn-warning" onclick="previewChanges()" disabled>
+                        👁️ Preview Changes
+                    </button>
+                    <button id="clear-btn" class="btn btn-icon" onclick="clearOperations()">
+                        🔄 Clear All
+                    </button>
+                </div>
+                <div>
+                    <button id="apply-btn" class="btn btn-success" onclick="showApplyModal()" disabled>
+                        ✅ Apply Changes
+                    </button>
+                </div>
+            </div>
+            
+            <div class="structure-container" id="structure-container">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📚</div>
+                    <div>Load a course to start reorganizing</div>
+                </div>
+            </div>
+            
+            <div id="operations-panel" class="operations-panel" style="display: none;">
+                <div class="operations-header">
+                    <span class="operations-title">📋 Pending Operations</span>
+                    <span id="operations-count" style="color: #666;">0 operations</span>
+                </div>
+                <div id="operations-list"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">👁️ Preview New Structure</span>
+                <button class="btn-close" onclick="closePreviewModal()">×</button>
+            </div>
+            <div id="preview-content"></div>
+            <div id="preview-status" class="status-message"></div>
+        </div>
+    </div>
+    
+    <!-- Apply Modal -->
+    <div id="apply-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">✅ Apply Changes</span>
+                <button class="btn-close" onclick="closeApplyModal()">×</button>
+            </div>
+            
+            <div class="help-box">
+                <div class="help-title">⚠️ Important</div>
+                <div class="help-text">
+                    This will modify the selected language files. Make sure you have backups or the files are under version control.
+                </div>
+            </div>
+            
+            <div class="language-selector">
+                <label class="form-label">Select languages to apply changes to:</label>
+                <div id="language-grid" class="language-grid"></div>
+            </div>
+            
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button class="btn btn-icon" onclick="closeApplyModal()">Cancel</button>
+                <button class="btn btn-success" onclick="applyChanges()">
+                    Apply to Selected Languages
+                </button>
+            </div>
+            
+            <div id="apply-status" class="status-message"></div>
+        </div>
+    </div>
+    
+    <script>
+        let currentRepo = null;
+        let currentCourse = null;
+        let currentLanguage = null;
+        let availableLanguages = [];
+        let courseStructure = null;
+        let operations = [];
+        let draggedChapter = null;
+        
+        async function init() {
+            await loadCourses();
+        }
+        
+        async function loadCourses() {
+            try {
+                const response = await fetch('/api/reorganizer/courses');
+                const data = await response.json();
+                
+                const repoSelect = document.getElementById('repo-select');
+                const repos = [...new Set(data.courses.map(c => c.repo))];
+                
+                repos.forEach(repo => {
+                    const option = document.createElement('option');
+                    option.value = repo;
+                    option.textContent = data.courses.find(c => c.repo === repo).repo_name;
+                    repoSelect.appendChild(option);
+                });
+                
+                repoSelect.addEventListener('change', () => loadCoursesForRepo(data.courses));
+            } catch (error) {
+                console.error('Failed to load courses:', error);
+            }
+        }
+        
+        function loadCoursesForRepo(allCourses) {
+            const repoSelect = document.getElementById('repo-select');
+            const courseSelect = document.getElementById('course-select');
+            const languageSelect = document.getElementById('language-select');
+            const loadBtn = document.getElementById('load-btn');
+            
+            courseSelect.innerHTML = '<option value="">Select Course</option>';
+            languageSelect.innerHTML = '<option value="">Select Language</option>';
+            courseSelect.disabled = true;
+            languageSelect.disabled = true;
+            loadBtn.disabled = true;
+            
+            if (!repoSelect.value) return;
+            
+            const courses = allCourses.filter(c => c.repo === repoSelect.value);
+            courses.forEach(course => {
+                const option = document.createElement('option');
+                option.value = course.path;
+                option.textContent = course.name;
+                courseSelect.appendChild(option);
+            });
+            
+            courseSelect.disabled = false;
+            courseSelect.addEventListener('change', loadLanguages);
+        }
+        
+        async function loadLanguages() {
+            const repo = document.getElementById('repo-select').value;
+            const course = document.getElementById('course-select').value;
+            const languageSelect = document.getElementById('language-select');
+            const loadBtn = document.getElementById('load-btn');
+            
+            languageSelect.innerHTML = '<option value="">Select Language</option>';
+            languageSelect.disabled = true;
+            loadBtn.disabled = true;
+            
+            if (!repo || !course) return;
+            
+            try {
+                const response = await fetch('/api/reorganizer/languages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repo, course })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    availableLanguages = data.languages;
+                    data.languages.forEach(lang => {
+                        const option = document.createElement('option');
+                        option.value = lang;
+                        option.textContent = getLanguageName(lang);
+                        languageSelect.appendChild(option);
+                    });
+                    
+                    languageSelect.disabled = false;
+                    languageSelect.addEventListener('change', () => {
+                        loadBtn.disabled = !languageSelect.value;
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load languages:', error);
+            }
+        }
+        
+        async function loadStructure() {
+            const repo = document.getElementById('repo-select').value;
+            const course = document.getElementById('course-select').value;
+            const language = document.getElementById('language-select').value;
+            
+            if (!repo || !course || !language) return;
+            
+            currentRepo = repo;
+            currentCourse = course;
+            currentLanguage = language;
+            
+            try {
+                const response = await fetch('/api/reorganizer/structure', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repo, course, language })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    courseStructure = data.structure;
+                    renderStructure();
+                    document.getElementById('reorganizer-section').classList.add('active');
+                    operations = [];
+                    updateOperationsPanel();
+                }
+            } catch (error) {
+                console.error('Failed to load structure:', error);
+            }
+        }
+        
+        function renderStructure() {
+            const container = document.getElementById('structure-container');
+            container.innerHTML = '';
+            
+            // Render orphan chapters if any
+            if (courseStructure.orphan_chapters && courseStructure.orphan_chapters.length > 0) {
+                const orphanDiv = document.createElement('div');
+                orphanDiv.className = 'orphan-chapters';
+                orphanDiv.innerHTML = `
+                    <div class="orphan-header">
+                        <span>⚠️</span>
+                        <span>Orphan Chapters (${courseStructure.orphan_chapters.length})</span>
+                    </div>
+                    <div class="chapters-list" id="orphan-list"></div>
+                `;
+                container.appendChild(orphanDiv);
+                
+                const orphanList = orphanDiv.querySelector('#orphan-list');
+                courseStructure.orphan_chapters.forEach((chapter, index) => {
+                    orphanList.appendChild(createChapterElement(chapter, index + 1));
+                });
+            }
+            
+            // Render parts
+            courseStructure.parts.forEach(part => {
+                container.appendChild(createPartElement(part));
+            });
+        }
+        
+        function createPartElement(part) {
+            const partDiv = document.createElement('div');
+            partDiv.className = 'part-section';
+            partDiv.dataset.partId = part.id;
+            
+            partDiv.innerHTML = `
+                <div class="part-header">
+                    <div class="part-title">
+                        <span>#</span>
+                        <span>${part.title}</span>
+                        <span class="part-badge">${part.chapters.length} chapters</span>
+                    </div>
+                    <div class="part-actions">
+                        <button class="btn-icon btn-delete" onclick="deletePart('${part.id}', '${escapeHtml(part.title)}')">
+                            🗑️ Delete Part
+                        </button>
+                    </div>
+                </div>
+                <div class="chapters-list" id="chapters-${part.id}"></div>
+            `;
+            
+            const chaptersList = partDiv.querySelector(`#chapters-${part.id}`);
+            part.chapters.forEach((chapter, index) => {
+                chaptersList.appendChild(createChapterElement(chapter, index + 1));
+            });
+            
+            return partDiv;
+        }
+        
+        function createChapterElement(chapter, number) {
+            const chapterDiv = document.createElement('div');
+            chapterDiv.className = 'chapter-item';
+            chapterDiv.draggable = true;
+            chapterDiv.dataset.chapterId = chapter.id;
+            
+            chapterDiv.innerHTML = `
+                <div class="chapter-title">
+                    <span class="chapter-number">${number}</span>
+                    <span>${chapter.title}</span>
+                </div>
+                <div>
+                    <span style="color: #999; font-size: 0.85em;">Drag to reorder</span>
+                </div>
+            `;
+            
+            // Drag and drop handlers
+            chapterDiv.addEventListener('dragstart', handleDragStart);
+            chapterDiv.addEventListener('dragover', handleDragOver);
+            chapterDiv.addEventListener('drop', handleDrop);
+            chapterDiv.addEventListener('dragend', handleDragEnd);
+            
+            return chapterDiv;
+        }
+        
+        function handleDragStart(e) {
+            draggedChapter = e.target;
+            e.target.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', e.target.innerHTML);
+        }
+        
+        function handleDragOver(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            
+            const target = e.target.closest('.chapter-item');
+            if (target && target !== draggedChapter) {
+                target.classList.add('drag-over');
+            }
+            
+            return false;
+        }
+        
+        function handleDrop(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            
+            const target = e.target.closest('.chapter-item');
+            if (target && draggedChapter && target !== draggedChapter) {
+                const sourceId = draggedChapter.dataset.chapterId;
+                const targetId = target.dataset.chapterId;
+                
+                addMoveOperation(sourceId, targetId);
+            }
+            
+            return false;
+        }
+        
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.chapter-item').forEach(item => {
+                item.classList.remove('drag-over');
+            });
+        }
+        
+        function addMoveOperation(sourceId, targetId) {
+            // Remove any existing move operation for this chapter
+            operations = operations.filter(op => op.source_id !== sourceId);
+            
+            operations.push({
+                action: 'move_chapter',
+                source_id: sourceId,
+                target_id: targetId
+            });
+            
+            updateOperationsPanel();
+        }
+        
+        function deletePart(partId, partTitle) {
+            if (!confirm(`Are you sure you want to delete the part "${partTitle}" and all its chapters?`)) {
+                return;
+            }
+            
+            operations.push({
+                action: 'delete_part',
+                source_id: partId,
+                target_id: null
+            });
+            
+            updateOperationsPanel();
+        }
+        
+        function updateOperationsPanel() {
+            const panel = document.getElementById('operations-panel');
+            const list = document.getElementById('operations-list');
+            const count = document.getElementById('operations-count');
+            const previewBtn = document.getElementById('preview-btn');
+            const applyBtn = document.getElementById('apply-btn');
+            
+            if (operations.length === 0) {
+                panel.style.display = 'none';
+                previewBtn.disabled = true;
+                applyBtn.disabled = true;
+                return;
+            }
+            
+            panel.style.display = 'block';
+            previewBtn.disabled = false;
+            applyBtn.disabled = false;
+            count.textContent = `${operations.length} operation${operations.length > 1 ? 's' : ''}`;
+            
+            list.innerHTML = '';
+            operations.forEach((op, index) => {
+                const opDiv = document.createElement('div');
+                opDiv.className = 'operation-item';
+                
+                let opText = '';
+                if (op.action === 'move_chapter') {
+                    const sourceChapter = findChapter(op.source_id);
+                    const targetChapter = findChapter(op.target_id);
+                    opText = `Move "${sourceChapter?.title || op.source_id}" after "${targetChapter?.title || op.target_id}"`;
+                } else if (op.action === 'delete_part') {
+                    const part = findPart(op.source_id);
+                    opText = `Delete part "${part?.title || op.source_id}"`;
+                }
+                
+                opDiv.innerHTML = `
+                    <div class="operation-text">${opText}</div>
+                    <button class="btn-remove-op" onclick="removeOperation(${index})">Remove</button>
+                `;
+                
+                list.appendChild(opDiv);
+            });
+        }
+        
+        function findChapter(chapterId) {
+            for (const part of courseStructure.parts) {
+                const chapter = part.chapters.find(c => c.id === chapterId);
+                if (chapter) return chapter;
+            }
+            return courseStructure.orphan_chapters?.find(c => c.id === chapterId);
+        }
+        
+        function findPart(partId) {
+            return courseStructure.parts.find(p => p.id === partId);
+        }
+        
+        function removeOperation(index) {
+            operations.splice(index, 1);
+            updateOperationsPanel();
+        }
+        
+        function clearOperations() {
+            if (operations.length === 0) return;
+            if (!confirm('Clear all pending operations?')) return;
+            operations = [];
+            updateOperationsPanel();
+        }
+        
+        async function previewChanges() {
+            const modal = document.getElementById('preview-modal');
+            const content = document.getElementById('preview-content');
+            const status = document.getElementById('preview-status');
+            
+            modal.classList.add('active');
+            status.className = 'status-message status-progress active';
+            status.innerHTML = '<div class="spinner"></div><span>Generating preview...</span>';
+            
+            try {
+                const response = await fetch('/api/reorganizer/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repo: currentRepo,
+                        course: currentCourse,
+                        language: currentLanguage,
+                        operations: operations
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderPreview(data.new_structure);
+                    status.className = 'status-message status-success active';
+                    status.innerHTML = `✅ Preview generated (${data.operations_count} operations)`;
+                } else {
+                    status.className = 'status-message status-error active';
+                    status.innerHTML = `❌ ${data.error || 'Failed to generate preview'}`;
+                }
+            } catch (error) {
+                status.className = 'status-message status-error active';
+                status.innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+        
+        function renderPreview(structure) {
+            const content = document.getElementById('preview-content');
+            content.innerHTML = '<h3 style="margin-bottom: 15px;">New Structure:</h3>';
+            
+            const structureDiv = document.createElement('div');
+            structureDiv.style.maxHeight = '400px';
+            structureDiv.style.overflowY = 'auto';
+            
+            structure.parts.forEach(part => {
+                const partDiv = document.createElement('div');
+                partDiv.style.marginBottom = '15px';
+                partDiv.innerHTML = `
+                    <div style="font-weight: 700; margin-bottom: 8px;">
+                        # ${part.title} (${part.chapters.length} chapters)
+                    </div>
+                    <div style="margin-left: 20px;">
+                        ${part.chapters.map((ch, i) => `
+                            <div style="padding: 5px 0; border-bottom: 1px solid #eee;">
+                                ${i + 1}. ${ch.title}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                structureDiv.appendChild(partDiv);
+            });
+            
+            content.appendChild(structureDiv);
+        }
+        
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.remove('active');
+        }
+        
+        function showApplyModal() {
+            const modal = document.getElementById('apply-modal');
+            const grid = document.getElementById('language-grid');
+            
+            grid.innerHTML = '';
+            availableLanguages.forEach(lang => {
+                const label = document.createElement('label');
+                label.className = 'language-checkbox';
+                label.innerHTML = `
+                    <input type="checkbox" value="${lang}" ${lang === 'en' ? 'checked' : ''}>
+                    <span>${getLanguageName(lang)}</span>
+                `;
+                grid.appendChild(label);
+            });
+            
+            modal.classList.add('active');
+        }
+        
+        function closeApplyModal() {
+            document.getElementById('apply-modal').classList.remove('active');
+        }
+        
+        async function applyChanges() {
+            const selectedLanguages = Array.from(
+                document.querySelectorAll('#language-grid input:checked')
+            ).map(cb => cb.value);
+            
+            if (selectedLanguages.length === 0) {
+                alert('Please select at least one language');
+                return;
+            }
+            
+            const status = document.getElementById('apply-status');
+            status.className = 'status-message status-progress active';
+            status.innerHTML = '<div class="spinner"></div><span>Applying changes...</span>';
+            
+            try {
+                const response = await fetch('/api/reorganizer/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        repo: currentRepo,
+                        course: currentCourse,
+                        operations: operations,
+                        languages: selectedLanguages
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    status.className = 'status-message status-success active';
+                    status.innerHTML = `✅ ${data.message}. Files processed: ${data.files_processed}`;
+                    
+                    // Clear operations and reload structure
+                    setTimeout(() => {
+                        closeApplyModal();
+                        operations = [];
+                        loadStructure();
+                    }, 2000);
+                } else {
+                    status.className = 'status-message status-error active';
+                    status.innerHTML = `❌ ${data.error}`;
+                }
+            } catch (error) {
+                status.className = 'status-message status-error active';
+                status.innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+        
+        function getLanguageName(code) {
+            const names = {
+                'en': 'English', 'fr': 'French', 'es': 'Spanish', 'de': 'German',
+                'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian', 'ja': 'Japanese',
+                'ko': 'Korean', 'zh-Hans': 'Chinese (Simplified)', 'ar': 'Arabic',
+                'hi': 'Hindi', 'cs': 'Czech', 'nl': 'Dutch', 'pl': 'Polish',
+                'tr': 'Turkish', 'vi': 'Vietnamese', 'id': 'Indonesian',
+                'fi': 'Finnish', 'sv': 'Swedish', 'nb-NO': 'Norwegian',
+                'et': 'Estonian', 'fa': 'Persian', 'rn': 'Kirundi',
+                'si': 'Sinhala', 'sw': 'Swahili', 'sr-Latn': 'Serbian',
+                'zh-Hant': 'Traditional Chinese'
+            };
+            return names[code] || code;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        document.getElementById('load-btn').addEventListener('click', loadStructure);
+        
+        // Initialize
+        init();
+    </script>
+</body>
+</html>
