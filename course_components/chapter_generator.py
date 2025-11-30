@@ -49,7 +49,10 @@ NEVER use bullet points, numbered lists, or fragmented information presentation.
 EDUCATIONAL TONE:
 Write in clear, professional prose that explains concepts thoroughly. Use the instructor's conversational style but elevate it to course-grade writing. Create content that reads like a well-written textbook chapter while maintaining the accessibility of the original presentation.
 
-Transform this transcript into polished educational prose that preserves the instructor's voice while meeting academic writing standards. Remember: Write everything in {language_name}."""
+Transform this transcript into polished educational prose that preserves the instructor's voice while meeting academic writing standards. Remember: Write everything in {language_name}.
+
+OUTPUT FORMAT REQUIREMENTS:
+Synthesize the content in less than 800 words. Output your response inside a codeblock. Separate your 3 or 4 parts only by ### headings, never use ## or # headings. Do not use the em dash punctuation mark (—) anywhere in your output."""
         
         return base_prompt
 
