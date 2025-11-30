@@ -14,11 +14,50 @@ load_dotenv()
 class QuizGenerator:
     """Generator for creating quiz questions from chapter content using Claude."""
     
-    def __init__(self):
-        """Initialize the quiz generator with Claude API."""
+    def __init__(self, language: str = "en"):
+        """Initialize the quiz generator with Claude API.
+        
+        Args:
+            language: Language code for quiz generation (e.g., 'en', 'fr', 'es').
+        """
         self.client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
         self.author = None
         self.contributor_names = []
+        self.language = language
+
+    def _get_language_name(self, code: str) -> str:
+        """Convert language code to full language name."""
+        language_map = {
+            "en": "English",
+            "fr": "French",
+            "es": "Spanish",
+            "de": "German",
+            "it": "Italian",
+            "pt": "Portuguese",
+            "ru": "Russian",
+            "ja": "Japanese",
+            "ko": "Korean",
+            "zh-Hans": "Simplified Chinese",
+            "zh-Hant": "Traditional Chinese",
+            "ar": "Arabic",
+            "hi": "Hindi",
+            "cs": "Czech",
+            "nl": "Dutch",
+            "pl": "Polish",
+            "tr": "Turkish",
+            "vi": "Vietnamese",
+            "id": "Indonesian",
+            "fi": "Finnish",
+            "sv": "Swedish",
+            "nb-NO": "Norwegian",
+            "et": "Estonian",
+            "fa": "Persian",
+            "rn": "Kirundi",
+            "si": "Sinhala",
+            "sw": "Swahili",
+            "sr-Latn": "Serbian (Latin)",
+        }
+        return language_map.get(code, code)
     
     def collect_metadata(self) -> None:
         """Collect author and contributor information interactively."""
@@ -249,6 +288,8 @@ class QuizGenerator:
     def _generate_quiz_with_claude(self, chapter_content: str, chapter_name: str, difficulty: str, question_number: int) -> Dict[str, Any]:
         """Generate quiz questions using Claude."""
         
+        language_name = self._get_language_name(self.language)
+        
         difficulty_instructions = {
             'easy': """
 - Focus on basic concepts and definitions
@@ -269,6 +310,8 @@ class QuizGenerator:
         
         prompt = f"""Based on the following chapter content, create a {difficulty} multiple-choice quiz question #{question_number}.
 
+IMPORTANT: Generate the question, all answers, and explanation in {language_name}. The entire quiz content MUST be in {language_name}.
+
 Chapter: {chapter_name}
 
 Content:
@@ -278,12 +321,13 @@ Requirements for {difficulty} difficulty:
 {difficulty_instructions[difficulty]}
 
 Generate a quiz question with:
-1. A clear, single-line question (no line breaks)
-2. One correct answer (single line)
-3. Three wrong answers that are plausible but clearly incorrect (each on single line)
-4. A 50-word explanation that provide argument why it's true, or reformulate the concept to ease the understanding
+1. A clear, single-line question (no line breaks) - in {language_name}
+2. One correct answer (single line) - in {language_name}
+3. Three wrong answers that are plausible but clearly incorrect (each on single line) - in {language_name}
+4. A 50-word explanation that provide argument why it's true, or reformulate the concept to ease the understanding - in {language_name}
 
 IMPORTANT:
+- ALL content must be in {language_name}
 - Keep question and answers on single lines (no line breaks within them)
 - Wrong answers should be believable but definitively incorrect
 - Correct and wrong answer should be roughly the same length
@@ -293,14 +337,14 @@ IMPORTANT:
 
 Return ONLY a JSON object in this exact format:
 {{
-    "question": "Your single-line question here?",
-    "answer": "The correct answer",
+    "question": "Your single-line question here in {language_name}?",
+    "answer": "The correct answer in {language_name}",
     "wrong_answers": [
-        "First wrong answer",
-        "Second wrong answer",
-        "Third wrong answer"
+        "First wrong answer in {language_name}",
+        "Second wrong answer in {language_name}",
+        "Third wrong answer in {language_name}"
     ],
-    "explanation": "Detailed explanation here. Can be multiple sentences and paragraphs."
+    "explanation": "Detailed explanation in {language_name}. Can be multiple sentences and paragraphs."
 }}
 """
         
@@ -348,6 +392,8 @@ Return ONLY a JSON object in this exact format:
     def _generate_quiz_with_claude_avoiding_duplicates(self, chapter_content: str, chapter_name: str, difficulty: str, existing_questions: List[Dict[str, str]]) -> Dict[str, Any]:
         """Generate quiz questions using Claude while avoiding duplicates."""
         
+        language_name = self._get_language_name(self.language)
+        
         difficulty_instructions = {
             'easy': """
 - Focus on basic concepts and definitions
@@ -384,6 +430,8 @@ Return ONLY a JSON object in this exact format:
         
         prompt = f"""Based on the following chapter content, create a {difficulty} multiple-choice quiz question.
 
+IMPORTANT: Generate the question, all answers, and explanation in {language_name}. The entire quiz content MUST be in {language_name}.
+
 Chapter: {chapter_name}
 
 Content:
@@ -394,12 +442,13 @@ Requirements for {difficulty} difficulty:
 {existing_questions_text}
 
 Generate a quiz question with:
-1. A clear, single-line question (no line breaks)
-2. One correct answer (single line)
-3. Three wrong answers that are plausible but clearly incorrect (each on single line)
-4. A 50-word explanation that provide argument why it's true, or reformulate the concept to ease the understanding
+1. A clear, single-line question (no line breaks) - in {language_name}
+2. One correct answer (single line) - in {language_name}
+3. Three wrong answers that are plausible but clearly incorrect (each on single line) - in {language_name}
+4. A 50-word explanation that provide argument why it's true, or reformulate the concept to ease the understanding - in {language_name}
 
 IMPORTANT:
+- ALL content must be in {language_name}
 - Keep question and answers on single lines (no line breaks within them)
 - Wrong answers should be believable but definitively incorrect
 - Correct and wrong answer should be roughly the same length
@@ -411,14 +460,14 @@ IMPORTANT:
 
 Return ONLY a JSON object in this exact format:
 {{
-    "question": "Your single-line question here?",
-    "answer": "The correct answer",
+    "question": "Your single-line question here in {language_name}?",
+    "answer": "The correct answer in {language_name}",
     "wrong_answers": [
-        "First wrong answer",
-        "Second wrong answer",
-        "Third wrong answer"
+        "First wrong answer in {language_name}",
+        "Second wrong answer in {language_name}",
+        "Third wrong answer in {language_name}"
     ],
-    "explanation": "Detailed explanation here. Can be multiple sentences and paragraphs."
+    "explanation": "Detailed explanation in {language_name}. Can be multiple sentences and paragraphs."
 }}
 """
         

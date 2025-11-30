@@ -332,10 +332,16 @@ class QuizWorkflowManager:
         
         return chapters
     
-    def _initialize_quiz_generator(self, author: str = 'Course Ally', contributors: List[str] = None) -> QuizGenerator:
-        """Initialize quiz generator with metadata"""
-        if not self.quiz_generator:
-            self.quiz_generator = QuizGenerator()
+    def _initialize_quiz_generator(self, author: str = 'Course Ally', contributors: List[str] = None, language: str = 'en') -> QuizGenerator:
+        """Initialize quiz generator with metadata
+        
+        Args:
+            author: Quiz author name
+            contributors: List of contributor names
+            language: Language code for quiz generation
+        """
+        # Always create a new generator with the specified language
+        self.quiz_generator = QuizGenerator(language=language)
             
         self.quiz_generator.author = author
         self.quiz_generator.contributor_names = contributors or []
@@ -516,8 +522,8 @@ class QuizWorkflowManager:
                 progress_callback("Initializing quiz generator...", "processing", 5)
             yield {"status": "processing", "message": "Initializing quiz generator...", "percentage": 5}
             
-            # Initialize quiz generator
-            generator = self._initialize_quiz_generator(author, contributors)
+            # Initialize quiz generator with language support
+            generator = self._initialize_quiz_generator(author, contributors, language)
             
             if progress_callback:
                 progress_callback("Loading course chapters...", "processing", 10)

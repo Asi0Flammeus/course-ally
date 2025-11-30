@@ -73,8 +73,9 @@ class YouTubeDownloader:
             'no_warnings': True,
             'skip_download': True,  # We only want metadata, not downloads
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             },
+            'cookiesfrombrowser': ('firefox',),  # Use Firefox cookies for YouTube language settings
             'extractor_retries': 3,
             'ignoreerrors': False,
         }

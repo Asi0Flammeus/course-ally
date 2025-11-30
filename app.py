@@ -430,16 +430,29 @@ def create_chapters():
     data = request.json
     transcript_folder = data.get('transcript_folder')
     subfolder = data.get('subfolder', None)
+    language = data.get('language', 'en')  # Default to English
     
     session_id = create_progress_queue()
     active_processes[session_id] = {'cancelled': False}
+    
+    # Language name mapping for display
+    language_names = {
+        'en': 'English', 'fr': 'French', 'es': 'Spanish', 'de': 'German',
+        'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian', 'ja': 'Japanese',
+        'ko': 'Korean', 'zh-Hans': 'Chinese (Simplified)', 'zh-Hant': 'Chinese (Traditional)',
+        'ar': 'Arabic', 'hi': 'Hindi', 'cs': 'Czech', 'nl': 'Dutch', 'pl': 'Polish',
+        'tr': 'Turkish', 'vi': 'Vietnamese', 'id': 'Indonesian', 'fi': 'Finnish',
+        'sv': 'Swedish', 'nb-NO': 'Norwegian', 'et': 'Estonian', 'fa': 'Persian',
+        'rn': 'Kirundi', 'si': 'Sinhala', 'sw': 'Swahili', 'sr-Latn': 'Serbian'
+    }
+    language_name = language_names.get(language, language)
     
     def process():
         try:
             if active_processes.get(session_id, {}).get('cancelled', False):
                 return
                 
-            send_progress(session_id, "📚 Starting chapter generation...", "processing", 10)
+            send_progress(session_id, f"📚 Starting chapter generation in {language_name}...", "processing", 10)
             
             # Find transcript files
             transcripts_path = Path('outputs') / 'transcripts' / transcript_folder
@@ -462,10 +475,10 @@ def create_chapters():
                 output_path = base_path / transcript_folder
             output_path.mkdir(parents=True, exist_ok=True)
             
-            # Initialize chapter generator
+            # Initialize chapter generator with language
             try:
-                generator = ChapterGenerator()
-                send_progress(session_id, "✅ Chapter generator initialized", "processing", 30)
+                generator = ChapterGenerator(language=language)
+                send_progress(session_id, f"✅ Chapter generator initialized ({language_name})", "processing", 30)
             except Exception as e:
                 send_progress(session_id, f"❌ Error initializing generator: {str(e)}", "error", 100)
                 return

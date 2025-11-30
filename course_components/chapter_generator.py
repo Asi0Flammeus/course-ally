@@ -11,19 +11,25 @@ class ChapterGenerator:
     Generate structured course chapter markdown files from transcripts using Claude.
     """
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, language: str = "en"):
         """
         Initialize the chapter generator.
         
         Args:
             api_key: Anthropic API key. If None, will read from environment variable.
+            language: Language code for chapter generation (e.g., 'en', 'fr', 'es').
         """
         self.client = AnthropicClient(api_key=api_key)
+        self.language = language
         self.system_prompt = self._get_system_prompt()
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for chapter generation."""
-        return """You are an expert at transforming video lectures into high-quality written course materials that maintain the instructor's authentic voice while creating professional, paragraph-based educational content.
+        language_name = self._get_language_name(self.language)
+        
+        base_prompt = f"""You are an expert at transforming video lectures into high-quality written course materials that maintain the instructor's authentic voice while creating professional, paragraph-based educational content.
+
+IMPORTANT: Generate all content in {language_name}. The entire chapter must be written in {language_name}.
 
 CORE MISSION:
 Transform conversational video content into polished course chapters that read like a well-written textbook while preserving the instructor's unique teaching style, terminology, and approach in roughly 500-800 words.
@@ -43,7 +49,43 @@ NEVER use bullet points, numbered lists, or fragmented information presentation.
 EDUCATIONAL TONE:
 Write in clear, professional prose that explains concepts thoroughly. Use the instructor's conversational style but elevate it to course-grade writing. Create content that reads like a well-written textbook chapter while maintaining the accessibility of the original presentation.
 
-Transform this transcript into polished educational prose that preserves the instructor's voice while meeting academic writing standards."""
+Transform this transcript into polished educational prose that preserves the instructor's voice while meeting academic writing standards. Remember: Write everything in {language_name}."""
+        
+        return base_prompt
+
+    def _get_language_name(self, code: str) -> str:
+        """Convert language code to full language name."""
+        language_map = {
+            "en": "English",
+            "fr": "French",
+            "es": "Spanish",
+            "de": "German",
+            "it": "Italian",
+            "pt": "Portuguese",
+            "ru": "Russian",
+            "ja": "Japanese",
+            "ko": "Korean",
+            "zh-Hans": "Simplified Chinese",
+            "zh-Hant": "Traditional Chinese",
+            "ar": "Arabic",
+            "hi": "Hindi",
+            "cs": "Czech",
+            "nl": "Dutch",
+            "pl": "Polish",
+            "tr": "Turkish",
+            "vi": "Vietnamese",
+            "id": "Indonesian",
+            "fi": "Finnish",
+            "sv": "Swedish",
+            "nb-NO": "Norwegian",
+            "et": "Estonian",
+            "fa": "Persian",
+            "rn": "Kirundi",
+            "si": "Sinhala",
+            "sw": "Swahili",
+            "sr-Latn": "Serbian (Latin)",
+        }
+        return language_map.get(code, code)
     
     def generate_chapter(
         self, 
@@ -62,6 +104,8 @@ Transform this transcript into polished educational prose that preserves the ins
         Returns:
             Generated chapter markdown content
         """
+        language_name = self._get_language_name(self.language)
+        
         # Build the user prompt
         prompt = f"""Transform this video transcript into a well-structured course chapter:
 
@@ -73,7 +117,8 @@ INSTRUCTIONS:
 - Use ### and #### headings only
 - Focus on educational content and learning objectives
 - Remove conversational filler while preserving all important information
-- Organize content logically for learning progression"""
+- Organize content logically for learning progression
+- IMPORTANT: Write the entire chapter in {language_name}"""
         
         if chapter_title:
             prompt += f"\n- Use '{chapter_title}' as the main chapter title"
@@ -137,12 +182,15 @@ INSTRUCTIONS:
     
     def _generate_chapter_title(self, chapter_content: str) -> str:
         """Generate a concise, pedagogical chapter title from chapter content."""
-        title_prompt = f"""Generate a concise chapter title that captures the essence of this educational content. Requirements:
+        language_name = self._get_language_name(self.language)
+        
+        title_prompt = f"""Generate a concise chapter title in {language_name} that captures the essence of this educational content. Requirements:
 - 3-8 words that clearly identify the main topic/concept
 - Use the same terminology and tone as the original speaker
 - Make it immediately clear what this chapter teaches
 - Balance academic clarity with conversational accessibility
 - Focus on the core concept or skill being taught
+- IMPORTANT: The title must be in {language_name}
 
 Provide only the title, no additional formatting.
 
@@ -152,7 +200,7 @@ Chapter content:
         try:
             title = self.client.generate_text(
                 prompt=title_prompt,
-                system_prompt="You are an expert at creating clear, pedagogical chapter titles that reflect the instructor's voice and teaching style.",
+                system_prompt=f"You are an expert at creating clear, pedagogical chapter titles in {language_name} that reflect the instructor's voice and teaching style.",
                 max_tokens=50,
                 temperature=0.1
             ).strip()

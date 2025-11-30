@@ -720,12 +720,13 @@ def playlist_to_md(subfolder: str) -> None:
     # Get playlist metadata
     try:
         ydl_opts = {
-            'quiet': True, 
-            'extract_flat': True, 
+            'quiet': True,
+            'extract_flat': True,
             'no_warnings': True,
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             },
+            'cookiesfrombrowser': ('firefox',),  # Use Firefox cookies for YouTube language settings
             'extractor_retries': 3,
             'ignoreerrors': False,
         }
