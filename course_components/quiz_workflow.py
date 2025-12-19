@@ -229,30 +229,45 @@ class QuizWorkflowManager:
         return sorted(courses, key=lambda x: x['name'])
     
     def list_chapters(self, repo_key: str, course_name: str, language: str = 'en') -> List[Dict[str, Any]]:
-        """List chapters in a course for a specific language"""
+        """List chapters in a course for a specific language.
+
+        Returns chapters with 'source_language' field indicating the actual language file used.
+        """
         repo_path = self._get_repo_path(repo_key)
         if not repo_path:
             return []
-            
+
         # The language file is in the course folder: courses/{course_name}/{language}.md
         course_path = repo_path / 'courses' / course_name
         language_file = course_path / f'{language}.md'
-        
+        actual_language = language
+
         if not language_file.exists():
             # Fallback to English if requested language doesn't exist
             language_file = course_path / 'en.md'
+            actual_language = 'en'
             if not language_file.exists():
-                return []
-            
+                # Fallback to any available language file
+                available_files = list(course_path.glob('*.md'))
+                if available_files:
+                    language_file = available_files[0]
+                    # Extract language from filename (e.g., 'fr.md' -> 'fr')
+                    actual_language = language_file.stem
+                else:
+                    return []
+
         chapters = []
-        
+
         try:
             content = language_file.read_text(encoding='utf-8')
             chapters = self._extract_chapters_from_content(content, language_file)
+            # Add source language to each chapter
+            for chapter in chapters:
+                chapter['source_language'] = actual_language
         except Exception as e:
             print(f"Error reading {language_file}: {e}")
             return []
-                
+
         return sorted(chapters, key=lambda x: x.get('order', 999))
     
     def list_languages(self, repo_key: str, course_name: str) -> List[str]:
@@ -429,9 +444,9 @@ class QuizWorkflowManager:
             f.write(f"difficulty: {question_data.get('difficulty', 'intermediate')}\n")
             f.write(f"duration: {question_data.get('duration', 30)}\n")
             f.write(f"author: {question_data.get('author', 'Course Ally')}\n")
-            f.write(f"original_language: en\n")
+            f.write(f"original_language: {language}\n")
             f.write(f"proofreading:\n")
-            f.write(f"  - language: en\n")
+            f.write(f"  - language: {language}\n")
             f.write(f"    last_contribution_date: {datetime.now().strftime('%Y-%m-%d')}\n")
             f.write(f"    urgency: 1\n")
             f.write(f"    contributor_names:\n")
@@ -534,14 +549,29 @@ class QuizWorkflowManager:
             
             # Filter to requested chapter IDs
             selected_chapters = [ch for ch in all_chapters if ch['chapter_id'] in chapter_ids]
-            
+
             if not selected_chapters:
                 error_msg = f"No chapters found for IDs: {chapter_ids}"
                 if progress_callback:
                     progress_callback(error_msg, "error", 100)
                 yield {"status": "error", "message": error_msg, "percentage": 100}
                 return
-                
+
+            # Detect actual source language from chapters (in case of fallback)
+            actual_language = selected_chapters[0].get('source_language', language)
+            if actual_language != language:
+                # Re-initialize generator with actual source language
+                if progress_callback:
+                    progress_callback(f"Using source language: {actual_language}", "processing", 12)
+                yield {
+                    "status": "processing",
+                    "message": f"Using source language: {actual_language}",
+                    "percentage": 12,
+                    "data": {"source_language": actual_language}
+                }
+                generator = self._initialize_quiz_generator(author, contributors, actual_language)
+                language = actual_language  # Update language for saving quiz files
+
             # Check if chapters have content - if not, this indicates we need different approach
             chapters_with_content = [ch for ch in selected_chapters if ch.get('content') and len(ch['content']) > 100]
             
@@ -627,7 +657,7 @@ class QuizWorkflowManager:
                         
                         if not has_content:
                             # Skip generation but continue with existing questions if available
-                            existing_questions = generator._load_existing_questions_for_chapter(quizz_path, chapter['chapter_id'])
+                            existing_questions = generator._load_existing_questions_for_chapter(quizz_path, chapter['chapter_id'], language)
                             if len(existing_questions) == 0:
                                 if progress_callback:
                                     progress_callback(f"Skipping chapter {chapter['title']} - no content or existing questions", "warning", question_percentage)
@@ -639,7 +669,7 @@ class QuizWorkflowManager:
                             continue
                             
                         # Load existing questions for this chapter to avoid duplicates
-                        existing_questions = generator._load_existing_questions_for_chapter(quizz_path, chapter['chapter_id'])
+                        existing_questions = generator._load_existing_questions_for_chapter(quizz_path, chapter['chapter_id'], language)
                         
                         if progress_callback:
                             existing_count = len(existing_questions)

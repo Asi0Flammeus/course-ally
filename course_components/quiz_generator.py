@@ -177,7 +177,7 @@ class QuizGenerator:
             chapter_id = self._extract_chapter_id(chapter_content)
         
         # Load existing questions for this chapter to avoid duplicates
-        existing_questions = self._load_existing_questions_for_chapter(quizz_output_path, chapter_id)
+        existing_questions = self._load_existing_questions_for_chapter(quizz_output_path, chapter_id, self.language)
         
         # Generate quiz using Claude with existing questions context
         quiz_data = self._generate_quiz_with_claude_avoiding_duplicates(
@@ -223,13 +223,14 @@ class QuizGenerator:
             return match.group(1).strip()
         return None
 
-    def _load_existing_questions_for_chapter(self, quizz_path: Path, chapter_id: str) -> List[Dict[str, str]]:
+    def _load_existing_questions_for_chapter(self, quizz_path: Path, chapter_id: str, language: str = 'en') -> List[Dict[str, str]]:
         """
         Load existing questions for a specific chapter from the quizz directory.
         
         Args:
             quizz_path: Path to the quizz directory
             chapter_id: The chapter ID to filter questions by
+            language: Language code to load questions from (default 'en')
             
         Returns:
             List of dictionaries containing question text and difficulty level
@@ -262,16 +263,19 @@ class QuizGenerator:
                     
                 difficulty = difficulty_match.group(1).strip() if difficulty_match else 'unknown'
                 
-                # Read en.yml to get the question text
-                en_yml = quiz_folder / 'en.yml'
-                if not en_yml.exists():
-                    continue
+                # Try to read the language-specific file first, then fall back to en.yml
+                lang_yml = quiz_folder / f'{language}.yml'
+                if not lang_yml.exists():
+                    # Fall back to English if target language doesn't exist
+                    lang_yml = quiz_folder / 'en.yml'
+                    if not lang_yml.exists():
+                        continue
                     
-                with open(en_yml, 'r', encoding='utf-8') as f:
-                    en_content = f.read()
+                with open(lang_yml, 'r', encoding='utf-8') as f:
+                    lang_content = f.read()
                     
                 # Extract question text
-                question_match = re.search(r'^question:\s*(.+)$', en_content, re.MULTILINE)
+                question_match = re.search(r'^question:\s*(.+)$', lang_content, re.MULTILINE)
                 if question_match:
                     question_text = question_match.group(1).strip()
                     existing_questions.append({
@@ -315,7 +319,7 @@ IMPORTANT: Generate the question, all answers, and explanation in {language_name
 Chapter: {chapter_name}
 
 Content:
-{chapter_content[:8000]}  # Limit content to avoid token limits
+{chapter_content}
 
 Requirements for {difficulty} difficulty:
 {difficulty_instructions[difficulty]}
@@ -435,7 +439,7 @@ IMPORTANT: Generate the question, all answers, and explanation in {language_name
 Chapter: {chapter_name}
 
 Content:
-{chapter_content[:8000]}  # Limit content to avoid token limits
+{chapter_content}
 
 Requirements for {difficulty} difficulty:
 {difficulty_instructions[difficulty]}
