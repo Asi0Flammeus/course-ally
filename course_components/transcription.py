@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Union, List
+from typing import Union, List, Optional, Tuple
+from dataclasses import dataclass, field
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
@@ -7,6 +8,58 @@ import tempfile
 import subprocess
 import math
 import re
+
+
+@dataclass
+class TranscriptSegment:
+    """A segment of transcript with timestamp information."""
+    start: float  # Start time in seconds
+    end: float    # End time in seconds
+    text: str     # Segment text
+    
+    def format_timestamp(self) -> str:
+        """Format start time as [HH:MM:SS]."""
+        hours = int(self.start // 3600)
+        minutes = int((self.start % 3600) // 60)
+        seconds = int(self.start % 60)
+        if hours > 0:
+            return f"[{hours:02d}:{minutes:02d}:{seconds:02d}]"
+        return f"[{minutes:02d}:{seconds:02d}]"
+
+
+@dataclass 
+class TranscriptionResult:
+    """
+    Result of a transcription with optional timestamp information.
+    Implements __str__ for backward compatibility with code expecting str.
+    """
+    text: str                                           # Full transcript text
+    segments: List[TranscriptSegment] = field(default_factory=list)  # Timestamped segments
+    duration: Optional[float] = None                    # Total audio duration
+    language: Optional[str] = None                      # Detected language
+    
+    def __str__(self) -> str:
+        """Return plain text for backward compatibility."""
+        return self.text
+    
+    def __len__(self) -> int:
+        """Return length of text for compatibility."""
+        return len(self.text)
+    
+    def split(self, sep: str = None) -> List[str]:
+        """Split text for compatibility with str.split()."""
+        return self.text.split(sep)
+    
+    def format_with_timestamps(self) -> str:
+        """Format transcript with timestamps at the start of each segment."""
+        if not self.segments:
+            return self.text
+        
+        lines = []
+        for segment in self.segments:
+            timestamp = segment.format_timestamp()
+            lines.append(f"{timestamp} {segment.text}")
+        return '\n'.join(lines)
 
 class TranscriptionService:
     """
@@ -47,8 +100,26 @@ class TranscriptionService:
         except (subprocess.CalledProcessError, ValueError) as e:
             raise RuntimeError(f"Failed to get audio duration: {e}")
 
-    def _split_audio_into_chunks(self, audio_file: Path, temp_dir: Path, progress_callback=None) -> List[Path]:
-        """Split audio file into chunks that are under the size limit."""
+    def _split_audio_into_chunks(
+        self, 
+        audio_file: Path, 
+        temp_dir: Path, 
+        progress_callback=None,
+        include_offsets: bool = False
+    ) -> Union[List[Path], List[Tuple[Path, float]]]:
+        """
+        Split audio file into chunks that are under the size limit.
+        
+        Args:
+            audio_file: Path to the audio file
+            temp_dir: Temporary directory to store chunks
+            progress_callback: Optional callback for progress updates
+            include_offsets: If True, return tuples of (chunk_path, start_offset)
+            
+        Returns:
+            If include_offsets is False: List of chunk file paths
+            If include_offsets is True: List of (chunk_path, start_offset_seconds) tuples
+        """
         duration = self._get_audio_duration(audio_file)
 
         # Calculate max chunk duration based on target bitrate (128 kbps)
@@ -94,7 +165,11 @@ class TranscriptionService:
                         f"exceeds {self.max_file_size_mb} MB limit. Try reducing audio quality further."
                     )
 
-                chunk_files.append(chunk_file)
+                # Include offset if requested (for timestamp adjustment)
+                if include_offsets:
+                    chunk_files.append((chunk_file, start_time))
+                else:
+                    chunk_files.append(chunk_file)
 
                 if progress_callback:
                     progress_callback(f"Created chunk {i+1}/{num_chunks} ({chunk_size / (1024 * 1024):.1f} MB)")
@@ -110,15 +185,53 @@ class TranscriptionService:
         
         return chunk_files
 
-    def _transcribe_single_file(self, audio_file: Path, progress_callback=None) -> str:
-        """Transcribe a single audio file."""
+    def _transcribe_single_file(
+        self, 
+        audio_file: Path, 
+        progress_callback=None,
+        include_timestamps: bool = False,
+        time_offset: float = 0.0
+    ) -> Union[str, Tuple[str, List[TranscriptSegment]]]:
+        """
+        Transcribe a single audio file.
+        
+        Args:
+            audio_file: Path to the audio file
+            progress_callback: Optional callback for progress updates
+            include_timestamps: If True, return segments with timestamps
+            time_offset: Offset to add to all timestamps (for chunked audio)
+            
+        Returns:
+            If include_timestamps is False: transcript text (str)
+            If include_timestamps is True: tuple of (text, list of TranscriptSegment)
+        """
         try:
             with open(audio_file, "rb") as audio:
-                response = self.client.audio.transcriptions.create(
-                    model=self.model,
-                    file=audio
-                )
-                return response.text
+                if include_timestamps:
+                    # Use verbose_json to get segment timestamps
+                    response = self.client.audio.transcriptions.create(
+                        model=self.model,
+                        file=audio,
+                        response_format="verbose_json"
+                    )
+                    
+                    # Extract segments with timestamps
+                    segments = []
+                    for seg in response.segments:
+                        segment = TranscriptSegment(
+                            start=seg.start + time_offset,
+                            end=seg.end + time_offset,
+                            text=seg.text.strip()
+                        )
+                        segments.append(segment)
+                    
+                    return response.text, segments
+                else:
+                    response = self.client.audio.transcriptions.create(
+                        model=self.model,
+                        file=audio
+                    )
+                    return response.text
         except Exception as e:
             raise RuntimeError(f"Transcription failed for {audio_file.name}: {e}")
 
@@ -187,7 +300,103 @@ class TranscriptionService:
         # Join sentences with newlines
         return '\n'.join(cleaned_sentences) if cleaned_sentences else text
 
-    def transcribe(self, audio_file: Union[str, Path], progress_callback=None) -> str:
+    def _format_transcript_with_timestamps(
+        self, 
+        segments: List[TranscriptSegment]
+    ) -> Tuple[str, List[TranscriptSegment]]:
+        """
+        Format transcript into sentences while preserving timestamp alignment.
+        
+        Takes raw segments from Whisper and reformats text into sentences,
+        assigning each sentence the timestamp of its starting segment.
+        
+        Args:
+            segments: List of TranscriptSegment from Whisper API
+            
+        Returns:
+            Tuple of (formatted text with sentences, list of sentence-aligned segments)
+        """
+        if not segments:
+            return "", []
+        
+        # Combine all segment text
+        full_text = " ".join(seg.text for seg in segments)
+        
+        # Format into sentences using existing logic
+        formatted_text = self._format_transcript(full_text)
+        sentences = formatted_text.split('\n')
+        
+        # Now we need to align each sentence with its timestamp
+        # Strategy: Find where each sentence starts in the original segments
+        sentence_segments = []
+        
+        # Build a character-to-timestamp mapping from segments
+        char_timestamps = []  # List of (char_position, timestamp)
+        current_pos = 0
+        
+        for seg in segments:
+            # Record the start position and timestamp
+            char_timestamps.append((current_pos, seg.start, seg.end))
+            current_pos += len(seg.text) + 1  # +1 for space between segments
+        
+        # For each sentence, find its approximate start timestamp
+        search_pos = 0
+        combined_for_search = " ".join(seg.text for seg in segments)
+        
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
+            
+            # Find where this sentence starts in the combined text
+            # Use a simplified search - find the first few words
+            search_text = sentence[:min(50, len(sentence))].strip()
+            
+            # Find position in combined text
+            found_pos = combined_for_search.find(search_text, search_pos)
+            if found_pos == -1:
+                # Fallback: try with less text
+                search_text = sentence[:min(20, len(sentence))].strip()
+                found_pos = combined_for_search.find(search_text, search_pos)
+            
+            if found_pos == -1:
+                found_pos = search_pos  # Use current position as fallback
+            
+            # Find the timestamp for this position
+            start_time = 0.0
+            end_time = segments[-1].end if segments else 0.0
+            
+            for i, (char_pos, seg_start, seg_end) in enumerate(char_timestamps):
+                if char_pos <= found_pos:
+                    start_time = seg_start
+                    # Find the end time from the segment where the sentence likely ends
+                    sentence_end_pos = found_pos + len(sentence)
+                    for j in range(i, len(char_timestamps)):
+                        if j + 1 < len(char_timestamps):
+                            if char_timestamps[j + 1][0] > sentence_end_pos:
+                                end_time = char_timestamps[j][2]
+                                break
+                        else:
+                            end_time = char_timestamps[j][2]
+                else:
+                    break
+            
+            sentence_segments.append(TranscriptSegment(
+                start=start_time,
+                end=end_time,
+                text=sentence.strip()
+            ))
+            
+            # Update search position to avoid matching same text again
+            search_pos = found_pos + len(search_text)
+        
+        return formatted_text, sentence_segments
+
+    def transcribe(
+        self, 
+        audio_file: Union[str, Path], 
+        progress_callback=None,
+        include_timestamps: bool = False
+    ) -> Union[str, TranscriptionResult]:
         """
         Transcribes the given audio file to text.
         Automatically chunks files larger than the size limit.
@@ -195,9 +404,11 @@ class TranscriptionService:
         Args:
             audio_file: Path to the audio file.
             progress_callback: Optional callback function for progress updates.
+            include_timestamps: If True, return TranscriptionResult with timestamps.
 
         Returns:
-            Transcribed text.
+            If include_timestamps is False: Transcribed text (str)
+            If include_timestamps is True: TranscriptionResult with text and segments
 
         Raises:
             ValueError: If the file does not exist.
@@ -224,17 +435,37 @@ class TranscriptionService:
                 if progress_callback:
                     progress_callback(f"Uploading to OpenAI Whisper API...")
 
-                transcript = self._transcribe_single_file(audio_path, progress_callback)
+                if include_timestamps:
+                    # Get transcript with timestamps
+                    transcript, raw_segments = self._transcribe_single_file(
+                        audio_path, progress_callback, include_timestamps=True
+                    )
+                    
+                    # Format into sentences with aligned timestamps
+                    formatted_text, sentence_segments = self._format_transcript_with_timestamps(raw_segments)
+                    
+                    if progress_callback:
+                        word_count = len(transcript.split())
+                        sentence_count = len(sentence_segments)
+                        progress_callback(f"Transcription completed ({word_count} words, {sentence_count} sentences with timestamps)")
+                    
+                    return TranscriptionResult(
+                        text=formatted_text,
+                        segments=sentence_segments,
+                        duration=raw_segments[-1].end if raw_segments else None
+                    )
+                else:
+                    transcript = self._transcribe_single_file(audio_path, progress_callback)
 
-                # Format transcript for better readability
-                formatted_transcript = self._format_transcript(transcript)
+                    # Format transcript for better readability
+                    formatted_transcript = self._format_transcript(transcript)
 
-                if progress_callback:
-                    word_count = len(transcript.split())
-                    sentence_count = len(formatted_transcript.split('\n'))
-                    progress_callback(f"Transcription completed ({word_count} words, {sentence_count} sentences)")
-                
-                return formatted_transcript
+                    if progress_callback:
+                        word_count = len(transcript.split())
+                        sentence_count = len(formatted_transcript.split('\n'))
+                        progress_callback(f"Transcription completed ({word_count} words, {sentence_count} sentences)")
+                    
+                    return formatted_transcript
                 
             except Exception as e:
                 if progress_callback:
@@ -250,40 +481,83 @@ class TranscriptionService:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_path = Path(temp_dir)
 
-                    # Split audio into chunks
-                    chunk_files = self._split_audio_into_chunks(audio_path, temp_path, progress_callback)
+                    if include_timestamps:
+                        # Split audio into chunks WITH offset tracking
+                        chunk_data = self._split_audio_into_chunks(
+                            audio_path, temp_path, progress_callback, include_offsets=True
+                        )
 
-                    # Transcribe each chunk
-                    transcripts = []
-                    total_words = 0
-
-                    if progress_callback:
-                        progress_callback(f"Transcribing {len(chunk_files)} chunks...")
-
-                    for i, chunk_file in enumerate(chunk_files, 1):
-                        if progress_callback:
-                            progress_callback(f"Uploading chunk {i}/{len(chunk_files)} to OpenAI...")
-
-                        chunk_transcript = self._transcribe_single_file(chunk_file, progress_callback)
-                        transcripts.append(chunk_transcript)
-
-                        chunk_words = len(chunk_transcript.split())
-                        total_words += chunk_words
+                        # Transcribe each chunk with timestamp offset adjustment
+                        all_segments = []
+                        total_words = 0
 
                         if progress_callback:
-                            progress_callback(f"Chunk {i}/{len(chunk_files)} completed ({chunk_words} words)")
+                            progress_callback(f"Transcribing {len(chunk_data)} chunks with timestamps...")
 
-                    # Combine all transcripts with spaces between chunks
-                    full_transcript = " ".join(transcripts)
+                        for i, (chunk_file, time_offset) in enumerate(chunk_data, 1):
+                            if progress_callback:
+                                progress_callback(f"Uploading chunk {i}/{len(chunk_data)} to OpenAI...")
 
-                    # Format the combined transcript for better readability
-                    formatted_transcript = self._format_transcript(full_transcript)
+                            chunk_text, chunk_segments = self._transcribe_single_file(
+                                chunk_file, progress_callback, 
+                                include_timestamps=True, 
+                                time_offset=time_offset
+                            )
+                            all_segments.extend(chunk_segments)
 
-                    if progress_callback:
-                        sentence_count = len(formatted_transcript.split('\n'))
-                        progress_callback(f"All chunks transcribed and combined ({total_words} words, {sentence_count} sentences)")
+                            chunk_words = len(chunk_text.split())
+                            total_words += chunk_words
 
-                    return formatted_transcript
+                            if progress_callback:
+                                progress_callback(f"Chunk {i}/{len(chunk_data)} completed ({chunk_words} words)")
+
+                        # Format into sentences with aligned timestamps
+                        formatted_text, sentence_segments = self._format_transcript_with_timestamps(all_segments)
+
+                        if progress_callback:
+                            sentence_count = len(sentence_segments)
+                            progress_callback(f"All chunks transcribed and combined ({total_words} words, {sentence_count} sentences with timestamps)")
+
+                        return TranscriptionResult(
+                            text=formatted_text,
+                            segments=sentence_segments,
+                            duration=all_segments[-1].end if all_segments else None
+                        )
+                    else:
+                        # Original logic without timestamps
+                        chunk_files = self._split_audio_into_chunks(audio_path, temp_path, progress_callback)
+
+                        # Transcribe each chunk
+                        transcripts = []
+                        total_words = 0
+
+                        if progress_callback:
+                            progress_callback(f"Transcribing {len(chunk_files)} chunks...")
+
+                        for i, chunk_file in enumerate(chunk_files, 1):
+                            if progress_callback:
+                                progress_callback(f"Uploading chunk {i}/{len(chunk_files)} to OpenAI...")
+
+                            chunk_transcript = self._transcribe_single_file(chunk_file, progress_callback)
+                            transcripts.append(chunk_transcript)
+
+                            chunk_words = len(chunk_transcript.split())
+                            total_words += chunk_words
+
+                            if progress_callback:
+                                progress_callback(f"Chunk {i}/{len(chunk_files)} completed ({chunk_words} words)")
+
+                        # Combine all transcripts with spaces between chunks
+                        full_transcript = " ".join(transcripts)
+
+                        # Format the combined transcript for better readability
+                        formatted_transcript = self._format_transcript(full_transcript)
+
+                        if progress_callback:
+                            sentence_count = len(formatted_transcript.split('\n'))
+                            progress_callback(f"All chunks transcribed and combined ({total_words} words, {sentence_count} sentences)")
+
+                        return formatted_transcript
 
             except Exception as e:
                 if progress_callback:
