@@ -345,10 +345,13 @@ URL: {video_url}
 
 @app.route('/api/download-video', methods=['POST'])
 def download_video():
-    """Download YouTube video or playlist as MP4"""
+    """Download YouTube video with quality and timestamp options"""
     data = request.json
     video_url = data.get('video_url')
     subfolder = data.get('subfolder', None)
+    quality = data.get('quality', 'best')
+    start_time = data.get('start_time', None)
+    end_time = data.get('end_time', None)
     
     session_id = create_progress_queue()
     active_processes[session_id] = {'cancelled': False}
@@ -367,24 +370,24 @@ def download_video():
             if subfolder:
                 output_path = base_path / subfolder
             else:
-                output_path = base_path
+                output_path = base_path / 'downloads'
             output_path.mkdir(parents=True, exist_ok=True)
             
             if active_processes.get(session_id, {}).get('cancelled', False):
                 return
             
             # Determine if it's a playlist or single video
-            is_playlist = 'list=' in video_url or 'playlist' in video_url.lower()
+            is_playlist = 'list=' in video_url and 'watch?v=' not in video_url
             
             if is_playlist:
-                send_progress(session_id, "🎬 Detected playlist - preparing to download all videos...", "processing", 10)
+                send_progress(session_id, "🎬 Detected playlist - downloading all videos...", "processing", 10)
                 
                 # Download progress callback
                 def download_progress(message):
                     if not active_processes.get(session_id, {}).get('cancelled', False):
                         send_progress(session_id, message, "processing", 50)
                 
-                # Use the new playlist download method
+                # Use the playlist download method (no clip support for playlists)
                 stats = downloader.download_playlist_videos(video_url, str(output_path), progress_callback=download_progress)
                 
                 if active_processes.get(session_id, {}).get('cancelled', False):
@@ -397,20 +400,42 @@ def download_video():
                 send_progress(session_id, summary, "success", 100)
                 
             else:
-                send_progress(session_id, "🎥 Detected single video - starting download...", "processing", 10)
+                # Single video with quality and timestamp options
+                quality_labels = {
+                    'best': 'Best Quality',
+                    'high': '1080p',
+                    'medium': '720p',
+                    'low': '480p',
+                    'audio_only': 'Audio Only'
+                }
+                quality_label = quality_labels.get(quality, quality)
+                
+                clip_info = ""
+                if start_time or end_time:
+                    clip_info = f" (Clip: {start_time or '0:00'} → {end_time or 'end'})"
+                
+                send_progress(session_id, f"🎥 Downloading video - {quality_label}{clip_info}...", "processing", 10)
                 
                 # Download progress callback
                 def download_progress(message):
                     if not active_processes.get(session_id, {}).get('cancelled', False):
                         send_progress(session_id, f"📥 {message}", "processing", 50)
                 
-                # Download single video
-                result_path = downloader.download_video(video_url, str(output_path), progress_callback=download_progress)
+                # Use the new download_video_clip method
+                result_path = downloader.download_video_clip(
+                    video_url=video_url,
+                    output_dir=str(output_path),
+                    quality=quality,
+                    start_time=start_time if start_time else None,
+                    end_time=end_time if end_time else None,
+                    progress_callback=download_progress
+                )
                 
                 if active_processes.get(session_id, {}).get('cancelled', False):
                     return
                 
-                send_progress(session_id, f"✅ Video downloaded successfully: {result_path.name if isinstance(result_path, Path) else 'video.mp4'}", "success", 100)
+                filename = result_path.name if isinstance(result_path, Path) else 'video.mp4'
+                send_progress(session_id, f"✅ Downloaded: {filename}", "success", 100)
             
         except Exception as e:
             send_progress(session_id, f"❌ Error: {str(e)}", "error", 100)
@@ -423,6 +448,23 @@ def download_video():
     thread.start()
     
     return jsonify({"session_id": session_id})
+
+
+@app.route('/api/video-info', methods=['POST'])
+def get_video_info():
+    """Get YouTube video information without downloading"""
+    data = request.json
+    video_url = data.get('video_url')
+    
+    if not video_url:
+        return jsonify({"error": "No video URL provided"}), 400
+    
+    try:
+        downloader = YouTubeDownloader()
+        info = downloader.get_video_info(video_url)
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/create-chapters', methods=['POST'])
 def create_chapters():

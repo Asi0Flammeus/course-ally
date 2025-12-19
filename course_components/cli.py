@@ -8,7 +8,7 @@ import threading
 import yt_dlp
 
 from course_components.downloader import YouTubeDownloader
-from course_components.transcription import TranscriptionService
+from course_components.transcription import TranscriptionService, TranscriptionResult
 from course_components.chapter_generator import ChapterGenerator
 from course_components.quiz_generator import QuizGenerator
 from course_components.utils import detect_youtube_url_type
@@ -32,7 +32,9 @@ def cli() -> None:
               help='Output format for transcripts.')
 @click.option('--max-workers', '-w', type=int, default=4,
               help='Maximum number of parallel workers for transcription.')
-def extract_playlist_transcripts(youtube_url: str, output_dir: str, subfolder: str, format: str, max_workers: int) -> None:
+@click.option('--timestamps', '-t', is_flag=True, default=False,
+              help='Include timestamps in the transcript (sentence-level).')
+def extract_playlist_transcripts(youtube_url: str, output_dir: str, subfolder: str, format: str, max_workers: int, timestamps: bool) -> None:
     """
     Extract transcripts from YouTube content (auto-detects videos vs playlists).
 
@@ -85,47 +87,92 @@ def extract_playlist_transcripts(youtube_url: str, output_dir: str, subfolder: s
 
                 # Transcribe audio
                 click.echo('🎤 Transcribing audio...')
-                transcript = transcription_service.transcribe(audio_path, progress_callback=progress_callback)
+                if timestamps:
+                    click.echo('⏱️  Timestamps enabled - capturing sentence-level timestamps...')
+                transcript_result = transcription_service.transcribe(
+                    audio_path, 
+                    progress_callback=progress_callback,
+                    include_timestamps=timestamps
+                )
                 click.echo('Transcription completed.')
 
                 # Save transcript
-                timestamp = time.strftime('%Y%m%d_%H%M%S')
+                file_timestamp = time.strftime('%Y%m%d_%H%M%S')
                 
                 if format == 'txt':
-                    filename = f"video_{video_id}_{timestamp}.txt"
+                    filename = f"video_{video_id}_{file_timestamp}.txt"
                     transcript_file = output_path / filename
                     
                     # Add metadata header
                     video_url = f"https://www.youtube.com/watch?v={video_id}"
-                    word_count = len(transcript.split())
-                    sentence_count = len(transcript.split('\n'))
+                    
+                    # Handle both str and TranscriptionResult
+                    if isinstance(transcript_result, TranscriptionResult):
+                        transcript_text = transcript_result.text
+                        word_count = len(transcript_text.split())
+                        sentence_count = len(transcript_result.segments) if transcript_result.segments else len(transcript_text.split('\n'))
+                        duration_str = f"\nDuration: {transcript_result.duration:.1f}s" if transcript_result.duration else ""
+                        timestamps_str = "\nTimestamps: Yes" if timestamps else ""
+                        
+                        # Format with timestamps if enabled
+                        if timestamps and transcript_result.segments:
+                            output_text = transcript_result.format_with_timestamps()
+                        else:
+                            output_text = transcript_text
+                    else:
+                        transcript_text = transcript_result
+                        word_count = len(transcript_text.split())
+                        sentence_count = len(transcript_text.split('\n'))
+                        duration_str = ""
+                        timestamps_str = ""
+                        output_text = transcript_text
                     
                     metadata_header = f"""# Video Transcript
 Video ID: {video_id}
 URL: {video_url}
 Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
-Words: {word_count} | Sentences: {sentence_count}
+Words: {word_count} | Sentences: {sentence_count}{duration_str}{timestamps_str}
 
 {'='*60}
 
 """
                     
-                    transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                    transcript_file.write_text(metadata_header + output_text, encoding='utf-8')
                     click.echo(f'📄 Transcript saved to {transcript_file}')
                     
                 else:  # JSON format
-                    filename = f"video_{video_id}_{timestamp}.json"
+                    filename = f"video_{video_id}_{file_timestamp}.json"
                     transcript_file = output_path / filename
                     
                     video_url = f"https://www.youtube.com/watch?v={video_id}"
-                    transcript_data = {
-                        'video_id': video_id,
-                        'url': video_url,
-                        'transcript': transcript,
-                        'word_count': len(transcript.split()),
-                        'sentence_count': len(transcript.split('\n')),
-                        'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
-                    }
+                    
+                    # Handle both str and TranscriptionResult
+                    if isinstance(transcript_result, TranscriptionResult):
+                        transcript_text = transcript_result.text
+                        transcript_data = {
+                            'video_id': video_id,
+                            'url': video_url,
+                            'transcript': transcript_text,
+                            'word_count': len(transcript_text.split()),
+                            'sentence_count': len(transcript_result.segments) if transcript_result.segments else len(transcript_text.split('\n')),
+                            'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                        }
+                        if timestamps and transcript_result.segments:
+                            transcript_data['segments'] = [
+                                {'start': seg.start, 'end': seg.end, 'text': seg.text}
+                                for seg in transcript_result.segments
+                            ]
+                        if transcript_result.duration:
+                            transcript_data['duration'] = transcript_result.duration
+                    else:
+                        transcript_data = {
+                            'video_id': video_id,
+                            'url': video_url,
+                            'transcript': transcript_result,
+                            'word_count': len(transcript_result.split()),
+                            'sentence_count': len(transcript_result.split('\n')),
+                            'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                        }
                     
                     with open(transcript_file, 'w', encoding='utf-8') as f:
                         json.dump(transcript_data, f, indent=2, ensure_ascii=False)
@@ -214,11 +261,36 @@ Words: {word_count} | Sentences: {sentence_count}
                 # Transcribe audio immediately
                 with stats_lock:
                     click.echo(f'    [{idx}/{len(video_ids)}] 🎤 Transcribing audio...')
-                transcript = video_transcription_service.transcribe(audio_path, progress_callback=video_progress)
+                    if timestamps:
+                        click.echo(f'    [{idx}/{len(video_ids)}] ⏱️  Timestamps enabled')
+                transcript_result = video_transcription_service.transcribe(
+                    audio_path, 
+                    progress_callback=video_progress,
+                    include_timestamps=timestamps
+                )
                 
-                # Calculate stats
-                word_count = len(transcript.split())
-                char_count = len(transcript)
+                # Handle both str and TranscriptionResult
+                if isinstance(transcript_result, TranscriptionResult):
+                    transcript_text = transcript_result.text
+                    word_count = len(transcript_text.split())
+                    char_count = len(transcript_text)
+                    segments_data = None
+                    duration = transcript_result.duration
+                    if timestamps and transcript_result.segments:
+                        segments_data = [
+                            {'start': seg.start, 'end': seg.end, 'text': seg.text}
+                            for seg in transcript_result.segments
+                        ]
+                        output_text = transcript_result.format_with_timestamps()
+                    else:
+                        output_text = transcript_text
+                else:
+                    transcript_text = transcript_result
+                    word_count = len(transcript_text.split())
+                    char_count = len(transcript_text)
+                    segments_data = None
+                    duration = None
+                    output_text = transcript_text
                 
                 # Save transcript (simplified filename since we don't have title)
                 filename = f"{idx:02d}_video_{video_id}"
@@ -227,28 +299,34 @@ Words: {word_count} | Sentences: {sentence_count}
                 result_data = {
                     'video_id': video_id,
                     'url': video_url,
-                    'transcript': transcript,
+                    'transcript': transcript_text,
                     'word_count': word_count,
                     'character_count': char_count,
                     'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S'),
                     'filename': filename
                 }
+                if segments_data:
+                    result_data['segments'] = segments_data
+                if duration:
+                    result_data['duration'] = duration
                 
                 if format == 'txt':
                     transcript_file = output_path / f"{filename}.txt"
                     
                     # Add metadata header to txt files
+                    duration_str = f"\nDuration: {duration:.1f}s" if duration else ""
+                    timestamps_str = "\nTimestamps: Yes" if timestamps else ""
                     metadata_header = f"""# Video Transcript
 Video ID: {video_id}
 URL: {video_url}
 Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
-Words: {word_count} | Characters: {char_count}
+Words: {word_count} | Characters: {char_count}{duration_str}{timestamps_str}
 
 {'='*60}
 
 """
                     
-                    transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                    transcript_file.write_text(metadata_header + output_text, encoding='utf-8')
                     with stats_lock:
                         click.echo(f'    [{idx}/{len(video_ids)}] ✅ Transcript saved to {transcript_file.name}')
                 
@@ -357,7 +435,9 @@ Words: {word_count} | Characters: {char_count}
               help='Output format for transcripts.')
 @click.option('--max-workers', '-w', type=int, default=4,
               help='Maximum number of parallel workers for transcription.')
-def transcribe_local_audio(output_dir: str, subfolder: str, format: str, max_workers: int) -> None:
+@click.option('--timestamps', '-t', is_flag=True, default=False,
+              help='Include timestamps in the transcript (sentence-level).')
+def transcribe_local_audio(output_dir: str, subfolder: str, format: str, max_workers: int, timestamps: bool) -> None:
     """
     Transcribe local audio files from outputs/audios directory.
     
@@ -519,41 +599,72 @@ def transcribe_local_audio(output_dir: str, subfolder: str, format: str, max_wor
             with stats_lock:
                 click.echo(f'\n🎤 [{idx}/{len(files_to_process)}] Processing: {audio_file.name}')
                 click.echo(f'    [{idx}/{len(files_to_process)}] 🎧 Transcribing audio...')
+                if timestamps:
+                    click.echo(f'    [{idx}/{len(files_to_process)}] ⏱️  Timestamps enabled')
             
             # Transcribe audio
-            transcript = audio_transcription_service.transcribe(audio_file, progress_callback=audio_progress)
+            transcript_result = audio_transcription_service.transcribe(
+                audio_file, 
+                progress_callback=audio_progress,
+                include_timestamps=timestamps
+            )
             
-            # Calculate stats
-            word_count = len(transcript.split())
-            char_count = len(transcript)
+            # Handle both str and TranscriptionResult
+            if isinstance(transcript_result, TranscriptionResult):
+                transcript_text = transcript_result.text
+                word_count = len(transcript_text.split())
+                char_count = len(transcript_text)
+                segments_data = None
+                duration = transcript_result.duration
+                if timestamps and transcript_result.segments:
+                    segments_data = [
+                        {'start': seg.start, 'end': seg.end, 'text': seg.text}
+                        for seg in transcript_result.segments
+                    ]
+                    output_text = transcript_result.format_with_timestamps()
+                else:
+                    output_text = transcript_text
+            else:
+                transcript_text = transcript_result
+                word_count = len(transcript_text.split())
+                char_count = len(transcript_text)
+                segments_data = None
+                duration = None
+                output_text = transcript_text
             
             # Save transcript
-            timestamp = time.strftime('%Y%m%d_%H%M%S')
-            filename_base = f"{audio_file.stem}_{timestamp}"
+            file_timestamp = time.strftime('%Y%m%d_%H%M%S')
+            filename_base = f"{audio_file.stem}_{file_timestamp}"
             
             result_data = {
                 'file': audio_file.name,
-                'transcript': transcript,
+                'transcript': transcript_text,
                 'word_count': word_count,
                 'character_count': char_count,
                 'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'filename': filename_base
             }
+            if segments_data:
+                result_data['segments'] = segments_data
+            if duration:
+                result_data['duration'] = duration
             
             if format == 'txt':
                 transcript_file = output_path / f"{filename_base}.txt"
                 
                 # Add metadata header to txt files
+                duration_str = f"\nDuration: {duration:.1f}s" if duration else ""
+                timestamps_str = "\nTimestamps: Yes" if timestamps else ""
                 metadata_header = f"""# Audio Transcript
 File: {audio_file.name}
 Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
-Words: {word_count} | Characters: {char_count}
+Words: {word_count} | Characters: {char_count}{duration_str}{timestamps_str}
 
 {'='*60}
 
 """
                 
-                transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                transcript_file.write_text(metadata_header + output_text, encoding='utf-8')
                 with stats_lock:
                     click.echo(f'    [{idx}/{len(files_to_process)}] ✅ Transcript saved to {transcript_file.name}')
             else:  # JSON format
@@ -1260,4 +1371,162 @@ def create_quiz(output_dir: str, subfolder: str, max_workers: int) -> None:
         click.echo(f'⚡ Average time per chapter: {total_time/successful_quizzes:.1f}s')
     click.echo(f'📁 Output location: {output_path.absolute()}')
     click.echo(f'✨ All done! Happy quizzing! 🧠')
+
+
+@cli.command('download-video')
+@click.argument('youtube_url')
+@click.option('--subfolder', '-s', type=str, default=None,
+              help='Subfolder name within outputs/videos directory.')
+@click.option('--quality', '-q', type=click.Choice(['best', 'high', 'medium', 'low', 'audio_only']),
+              default=None, help='Video quality preset.')
+@click.option('--start', type=str, default=None,
+              help='Start timestamp (e.g., "1:30" or "90" for seconds).')
+@click.option('--end', type=str, default=None,
+              help='End timestamp (e.g., "5:00" or "300" for seconds).')
+def download_video(youtube_url: str, subfolder: str, quality: str, start: str, end: str) -> None:
+    """
+    Download a YouTube video with quality and timestamp options.
+    
+    YOUTUBE_URL is the YouTube video URL to download.
+    
+    Examples:
+        course-ally download-video "https://youtube.com/watch?v=..."
+        course-ally download-video "https://youtube.com/watch?v=..." -s my_videos -q high
+        course-ally download-video "https://youtube.com/watch?v=..." --start 1:30 --end 5:00
+    """
+    start_time_total = time.time()
+    
+    # Validate URL type
+    url_type, identifier = detect_youtube_url_type(youtube_url)
+    
+    if url_type == 'invalid':
+        click.echo("❌ Invalid YouTube URL provided.")
+        click.echo("Supported formats:")
+        click.echo("  • https://www.youtube.com/watch?v=VIDEO_ID")
+        click.echo("  • https://youtu.be/VIDEO_ID")
+        raise click.Abort()
+    
+    if url_type == 'playlist':
+        click.echo("⚠️  Playlist URL detected. This command is for single videos.")
+        click.echo("Use the playlist download feature for multiple videos.")
+        raise click.Abort()
+    
+    downloader = YouTubeDownloader()
+    
+    click.echo('🎬 YouTube Video Downloader')
+    click.echo('─' * 60)
+    
+    # Fetch video info first
+    click.echo('📡 Fetching video information...')
+    try:
+        video_info = downloader.get_video_info(youtube_url)
+        click.echo(f'📺 Title: {video_info["title"]}')
+        click.echo(f'👤 Channel: {video_info["uploader"]}')
+        click.echo(f'⏱️  Duration: {video_info["duration_string"]}')
+        
+        if video_info['available_resolutions']:
+            resolutions_str = ', '.join(f'{r}p' for r in video_info['available_resolutions'][:5])
+            click.echo(f'📊 Available: {resolutions_str}')
+        
+        click.echo('─' * 60)
+    except Exception as e:
+        click.echo(f"⚠️  Could not fetch video info: {e}")
+        click.echo('─' * 60)
+        video_info = {'duration': 0, 'duration_string': 'Unknown'}
+    
+    # Interactive quality selection if not provided
+    if quality is None:
+        click.echo('🎯 Select video quality:')
+        click.echo('  1. best     - Highest available quality')
+        click.echo('  2. high     - Up to 1080p')
+        click.echo('  3. medium   - Up to 720p')
+        click.echo('  4. low      - Up to 480p')
+        click.echo('  5. audio_only - Audio only (m4a)')
+        
+        quality_map = {'1': 'best', '2': 'high', '3': 'medium', '4': 'low', '5': 'audio_only'}
+        while True:
+            try:
+                choice = click.prompt('Enter choice (1-5)', default='1')
+                if choice in quality_map:
+                    quality = quality_map[choice]
+                    break
+                elif choice in quality_map.values():
+                    quality = choice
+                    break
+                else:
+                    click.echo("❌ Please enter a number between 1 and 5")
+            except click.Abort:
+                raise
+    
+    click.echo(f'✅ Quality: {quality}')
+    
+    # Interactive timestamp selection if not provided via CLI
+    if start is None and end is None:
+        click.echo('')
+        click.echo('⏱️  Timestamp selection (optional):')
+        click.echo('  Format: MM:SS or HH:MM:SS or seconds')
+        click.echo('  Press Enter to skip (download full video)')
+        
+        start_input = click.prompt('Start time', default='', show_default=False)
+        if start_input.strip():
+            start = start_input.strip()
+        
+        end_input = click.prompt('End time', default='', show_default=False)
+        if end_input.strip():
+            end = end_input.strip()
+    
+    if start or end:
+        click.echo(f'✅ Clip: {start or "0:00"} → {end or "end"}')
+    else:
+        click.echo('✅ Downloading full video')
+    
+    # Interactive subfolder selection if not provided
+    if subfolder is None:
+        click.echo('')
+        subfolder_input = click.prompt(
+            'Subfolder name (within outputs/videos)',
+            default='downloads',
+            show_default=True
+        )
+        subfolder = subfolder_input.strip() or 'downloads'
+    
+    # Setup output directory
+    output_path = Path('outputs') / 'videos' / subfolder
+    output_path.mkdir(parents=True, exist_ok=True)
+    click.echo(f'📁 Output: {output_path.absolute()}')
+    click.echo('─' * 60)
+    
+    # Progress callback
+    def progress_callback(message):
+        click.echo(f'📥 {message}')
+    
+    # Download the video
+    click.echo('🚀 Starting download...')
+    try:
+        downloaded_file = downloader.download_video_clip(
+            video_url=youtube_url,
+            output_dir=str(output_path),
+            quality=quality,
+            start_time=start,
+            end_time=end,
+            progress_callback=progress_callback
+        )
+        
+        # Final summary
+        total_time = time.time() - start_time_total
+        click.echo('═' * 60)
+        click.echo('📊 DOWNLOAD SUMMARY')
+        click.echo('═' * 60)
+        click.echo(f'✅ Download completed!')
+        click.echo(f'📄 File: {downloaded_file.name if hasattr(downloaded_file, "name") else downloaded_file}')
+        click.echo(f'📁 Location: {output_path.absolute()}')
+        click.echo(f'🎯 Quality: {quality}')
+        if start or end:
+            click.echo(f'⏱️  Clip: {start or "0:00"} → {end or "end"}')
+        click.echo(f'⏱️  Total time: {total_time:.1f}s')
+        click.echo('✨ All done! Enjoy your video! 🎬')
+        
+    except Exception as e:
+        click.echo(f'❌ Download failed: {e}', err=True)
+        raise click.Abort()
 

@@ -1092,22 +1092,65 @@
             
             <form id="download-video-form">
                 <div class="form-group">
-                    <label class="form-label">YouTube Video or Playlist URL</label>
-                    <input type="text" class="form-input" id="video-download-url" 
-                           placeholder="https://www.youtube.com/watch?v=... or playlist URL" required>
-                    <div class="form-hint">Enter a YouTube video URL or playlist URL to download as MP4</div>
+                    <label class="form-label">YouTube Video URL</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" class="form-input" id="video-download-url"
+                               placeholder="https://www.youtube.com/watch?v=..." required style="flex: 1;">
+                        <button type="button" class="btn btn-secondary" id="fetch-video-info-btn" onclick="fetchVideoInfo()">
+                            <span>🔍</span> Info
+                        </button>
+                    </div>
+                    <div class="form-hint">Enter a YouTube video URL to download</div>
                 </div>
-                
+
+                <!-- Video Info Display -->
+                <div id="video-info-display" style="display: none; background: var(--bg-tertiary); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div>
+                            <div id="video-info-title" style="font-weight: 600; margin-bottom: 5px;"></div>
+                            <div id="video-info-channel" style="color: var(--text-secondary); font-size: 0.9em;"></div>
+                            <div id="video-info-duration" style="color: var(--text-secondary); font-size: 0.9em;"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-group">
-                    <label class="form-label">Subfolder Name (Optional)</label>
-                    <input type="text" class="form-input" id="video-download-subfolder" 
-                           placeholder="e.g., my-videos">
+                    <label class="form-label">Quality</label>
+                    <select class="form-input" id="video-download-quality">
+                        <option value="best">Best Quality (Original)</option>
+                        <option value="high">High (1080p)</option>
+                        <option value="medium" selected>Medium (720p)</option>
+                        <option value="low">Low (480p)</option>
+                        <option value="audio_only">Audio Only (M4A)</option>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label class="form-label">Start Time (Optional)</label>
+                        <input type="text" class="form-input" id="video-download-start"
+                               placeholder="e.g., 1:30 or 0:01:30">
+                        <div class="form-hint">Leave empty for beginning</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">End Time (Optional)</label>
+                        <input type="text" class="form-input" id="video-download-end"
+                               placeholder="e.g., 5:00 or 0:05:00">
+                        <div class="form-hint">Leave empty for end</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Subfolder Name</label>
+                    <input type="text" class="form-input" id="video-download-subfolder"
+                           placeholder="e.g., my-videos" value="downloads">
                     <div class="form-hint">Videos will be saved in outputs/videos/[subfolder]</div>
                 </div>
-                
+
                 <button type="submit" class="btn btn-primary">
                     <span>📥</span>
-                    Download Video(s)
+                    Download Video
                 </button>
             </form>
             
@@ -2065,24 +2108,72 @@
             }
         });
 
+        // Fetch video info function
+        async function fetchVideoInfo() {
+            const url = document.getElementById('video-download-url').value;
+            if (!url) {
+                alert('Please enter a YouTube URL first');
+                return;
+            }
+
+            const btn = document.getElementById('fetch-video-info-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span>⏳</span> Loading...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/video-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ video_url: url })
+                });
+
+                const info = await response.json();
+
+                if (info.error) {
+                    alert('Error: ' + info.error);
+                    return;
+                }
+
+                // Display video info
+                document.getElementById('video-info-title').textContent = '📺 ' + info.title;
+                document.getElementById('video-info-channel').textContent = '👤 ' + info.uploader;
+                document.getElementById('video-info-duration').textContent = '⏱️ Duration: ' + info.duration_string;
+                document.getElementById('video-info-display').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to fetch video info. Please check the URL.');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
         document.getElementById('download-video-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const submitBtn = e.target.querySelector('button[type="submit"]');
             submitBtn.disabled = true;
-            
+
+            const startTime = document.getElementById('video-download-start').value.trim();
+            const endTime = document.getElementById('video-download-end').value.trim();
+
             const data = {
                 video_url: document.getElementById('video-download-url').value,
-                subfolder: document.getElementById('video-download-subfolder').value || null
+                subfolder: document.getElementById('video-download-subfolder').value || 'downloads',
+                quality: document.getElementById('video-download-quality').value,
+                start_time: startTime || null,
+                end_time: endTime || null
             };
-            
+
             try {
                 const response = await fetch('/api/download-video', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                
+
                 const result = await response.json();
                 handleProgress(result.session_id, 'download-video-progress', 'download-video');
             } catch (error) {
