@@ -1294,7 +1294,15 @@
                         <option value="json">JSON (.json)</option>
                     </select>
                 </div>
-                
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="transcript-timestamps" style="margin-right: 0.5rem;">
+                        <span class="form-label" style="margin-bottom: 0;">Include Timestamps</span>
+                    </label>
+                    <div class="form-hint">Add sentence-level timestamps (e.g., [01:23] First sentence...)</div>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label">Parallel Workers (for playlists)</label>
                     <input type="number" class="form-input" id="transcript-max-workers" 
@@ -2031,7 +2039,8 @@
                         youtube_url: document.getElementById('youtube-url').value,
                         subfolder: document.getElementById('transcript-subfolder').value || null,
                         format: document.getElementById('transcript-format').value,
-                        max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4
+                        max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4,
+                        include_timestamps: document.getElementById('transcript-timestamps').checked
                     };
                     
                     response = await fetch('/api/extract-transcripts', {
@@ -2055,7 +2064,8 @@
                         selected_files: selectedFiles,
                         output_subfolder: document.getElementById('transcript-subfolder').value || null,
                         format: document.getElementById('transcript-format').value,
-                        max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4
+                        max_workers: parseInt(document.getElementById('transcript-max-workers').value) || 4,
+                        include_timestamps: document.getElementById('transcript-timestamps').checked
                     };
                     
                     response = await fetch('/api/audio/transcribe-local', {

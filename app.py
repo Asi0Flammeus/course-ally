@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 # Import your existing modules
 from course_components.downloader import YouTubeDownloader
-from course_components.transcription import TranscriptionService
+from course_components.transcription import TranscriptionService, TranscriptionResult
 from course_components.chapter_generator import ChapterGenerator
 from course_components.quiz_generator import QuizGenerator
 from course_components.quiz_workflow import QuizWorkflowManager
@@ -147,7 +147,8 @@ def extract_transcripts():
     youtube_url = data.get('youtube_url')
     subfolder = data.get('subfolder', None)
     format_type = data.get('format', 'txt')
-    max_workers = data.get('max_workers', 4)  # Add max_workers support
+    max_workers = data.get('max_workers', 4)
+    include_timestamps = data.get('include_timestamps', False)
     
     session_id = create_progress_queue()
     active_processes[session_id] = {'cancelled': False}
@@ -200,35 +201,62 @@ def extract_transcripts():
                         return
                     
                     # Transcribe audio
-                    send_progress(session_id, "🎤 Transcribing audio...", "processing", 60)
-                    
+                    if include_timestamps:
+                        send_progress(session_id, "🎤 Transcribing audio with timestamps...", "processing", 60)
+                    else:
+                        send_progress(session_id, "🎤 Transcribing audio...", "processing", 60)
+
                     def transcribe_progress(message):
                         send_progress(session_id, message, "processing", 80)
-                    
-                    transcript = transcription_service.transcribe(audio_path, progress_callback=transcribe_progress)
-                    
+
+                    transcript_result = transcription_service.transcribe(
+                        audio_path,
+                        progress_callback=transcribe_progress,
+                        include_timestamps=include_timestamps
+                    )
+
+                    # Handle TranscriptionResult vs string
+                    if isinstance(transcript_result, TranscriptionResult):
+                        transcript_text = transcript_result.text
+                        transcript_with_ts = transcript_result.format_with_timestamps() if transcript_result.segments else transcript_text
+                        duration = transcript_result.duration
+                    else:
+                        transcript_text = transcript_result
+                        transcript_with_ts = transcript_result
+                        duration = None
+
                     # Save transcript
-                    timestamp = time.strftime('%Y%m%d_%H%M%S')
-                    filename = f"video_{video_id}_{timestamp}.{format_type}"
+                    file_timestamp = time.strftime('%Y%m%d_%H%M%S')
+                    filename = f"video_{video_id}_{file_timestamp}.{format_type}"
                     transcript_file = output_path / filename
-                    
+
                     if format_type == 'txt':
                         video_url = f"https://www.youtube.com/watch?v={video_id}"
+                        duration_str = f"\nDuration: {duration:.1f}s" if duration else ""
+                        timestamps_str = "\nTimestamps: Yes" if include_timestamps else ""
                         metadata_header = f"""# Video Transcript
 Video ID: {video_id}
 URL: {video_url}
-Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
+Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}{duration_str}{timestamps_str}
 
 {'='*60}
 
 """
-                        transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                        output_text = transcript_with_ts if include_timestamps else transcript_text
+                        transcript_file.write_text(metadata_header + output_text, encoding='utf-8')
                     else:
                         transcript_data = {
                             'video_id': video_id,
-                            'transcript': transcript,
+                            'transcript': transcript_text,
                             'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
                         }
+                        if include_timestamps and isinstance(transcript_result, TranscriptionResult) and transcript_result.segments:
+                            transcript_data['segments'] = [
+                                {'start': seg.start, 'end': seg.end, 'text': seg.text}
+                                for seg in transcript_result.segments
+                            ]
+                        if duration:
+                            transcript_data['duration'] = duration
                         with open(transcript_file, 'w', encoding='utf-8') as f:
                             json.dump(transcript_data, f, indent=2, ensure_ascii=False)
                     
@@ -258,48 +286,85 @@ Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
                 def process_video(video_data):
                     """Process a single video"""
                     idx, video_id = video_data
-                    
+
                     # Check if cancelled
                     if active_processes.get(session_id, {}).get('cancelled', False):
                         return {'status': 'cancelled'}
-                    
+
                     with tempfile.TemporaryDirectory() as tmpdir:
                         try:
                             # Create individual instances for thread safety
                             video_downloader = YouTubeDownloader()
                             video_transcription = TranscriptionService()
-                            
+
                             # Download and transcribe
                             with stats_lock:
                                 send_progress(session_id, f"🎥 [{idx}/{len(video_ids)}] Downloading video {video_id}", "processing")
-                            
+
                             audio_path = video_downloader.download_audio(video_id, tmpdir)
-                            
+
                             # Check if cancelled
                             if active_processes.get(session_id, {}).get('cancelled', False):
                                 return {'status': 'cancelled'}
-                            
+
                             with stats_lock:
-                                send_progress(session_id, f"🎤 [{idx}/{len(video_ids)}] Transcribing audio", "processing")
-                            
-                            transcript = video_transcription.transcribe(audio_path)
-                            
+                                ts_msg = " with timestamps" if include_timestamps else ""
+                                send_progress(session_id, f"🎤 [{idx}/{len(video_ids)}] Transcribing audio{ts_msg}", "processing")
+
+                            transcript_result = video_transcription.transcribe(
+                                audio_path,
+                                include_timestamps=include_timestamps
+                            )
+
+                            # Handle TranscriptionResult vs string
+                            if isinstance(transcript_result, TranscriptionResult):
+                                transcript_text = transcript_result.text
+                                transcript_with_ts = transcript_result.format_with_timestamps() if transcript_result.segments else transcript_text
+                                duration = transcript_result.duration
+                                segments = transcript_result.segments
+                            else:
+                                transcript_text = transcript_result
+                                transcript_with_ts = transcript_result
+                                duration = None
+                                segments = None
+
                             # Save transcript
-                            filename = f"{idx:02d}_video_{video_id}.txt"
+                            filename = f"{idx:02d}_video_{video_id}.{format_type}"
                             transcript_file = output_path / filename
-                            
+
                             video_url = f"https://www.youtube.com/watch?v={video_id}"
-                            metadata_header = f"""# Video Transcript
+
+                            if format_type == 'txt':
+                                duration_str = f"\nDuration: {duration:.1f}s" if duration else ""
+                                timestamps_str = "\nTimestamps: Yes" if include_timestamps else ""
+                                metadata_header = f"""# Video Transcript
 Video ID: {video_id}
-URL: {video_url}
+URL: {video_url}{duration_str}{timestamps_str}
 
 {'='*60}
 
 """
-                            transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
-                            
+                                output_text = transcript_with_ts if include_timestamps else transcript_text
+                                transcript_file.write_text(metadata_header + output_text, encoding='utf-8')
+                            else:
+                                transcript_data = {
+                                    'video_id': video_id,
+                                    'url': video_url,
+                                    'transcript': transcript_text,
+                                    'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                                }
+                                if include_timestamps and segments:
+                                    transcript_data['segments'] = [
+                                        {'start': seg.start, 'end': seg.end, 'text': seg.text}
+                                        for seg in segments
+                                    ]
+                                if duration:
+                                    transcript_data['duration'] = duration
+                                with open(transcript_file, 'w', encoding='utf-8') as f:
+                                    json.dump(transcript_data, f, indent=2, ensure_ascii=False)
+
                             return {'status': 'success', 'video_id': video_id}
-                            
+
                         except Exception as e:
                             return {'status': 'failed', 'video_id': video_id, 'error': str(e)}
                 
@@ -1109,6 +1174,7 @@ def transcribe_local_audio():
     output_subfolder = data.get('output_subfolder', None)
     format_type = data.get('format', 'txt')
     max_workers = data.get('max_workers', 4)
+    include_timestamps = data.get('include_timestamps', False)
     
     if not audio_subfolder:
         return jsonify({'error': 'audio_subfolder parameter required'}), 400
@@ -1188,40 +1254,66 @@ def transcribe_local_audio():
                 try:
                     # Create individual transcription service for thread safety
                     audio_transcription = TranscriptionService()
-                    
+
                     with stats_lock:
-                        send_progress(session_id, f"🎤 [{idx}/{len(audio_files)}] Transcribing: {audio_file.name}", "processing")
-                    
+                        ts_msg = " with timestamps" if include_timestamps else ""
+                        send_progress(session_id, f"🎤 [{idx}/{len(audio_files)}] Transcribing{ts_msg}: {audio_file.name}", "processing")
+
                     # Transcribe audio
-                    transcript = audio_transcription.transcribe(audio_file)
-                    
+                    transcript_result = audio_transcription.transcribe(
+                        audio_file,
+                        include_timestamps=include_timestamps
+                    )
+
+                    # Handle TranscriptionResult vs string
+                    if isinstance(transcript_result, TranscriptionResult):
+                        transcript_text = transcript_result.text
+                        transcript_with_ts = transcript_result.format_with_timestamps() if transcript_result.segments else transcript_text
+                        duration = transcript_result.duration
+                        segments = transcript_result.segments
+                    else:
+                        transcript_text = transcript_result
+                        transcript_with_ts = transcript_result
+                        duration = None
+                        segments = None
+
                     # Calculate stats
-                    word_count = len(transcript.split())
-                    
+                    word_count = len(transcript_text.split())
+
                     # Save transcript
-                    timestamp = time.strftime('%Y%m%d_%H%M%S')
-                    filename_base = f"{audio_file.stem}_{timestamp}"
-                    
+                    file_timestamp = time.strftime('%Y%m%d_%H%M%S')
+                    filename_base = f"{audio_file.stem}_{file_timestamp}"
+
                     if format_type == 'txt':
                         transcript_file = output_path / f"{filename_base}.txt"
-                        
+
+                        duration_str = f"\nDuration: {duration:.1f}s" if duration else ""
+                        timestamps_str = "\nTimestamps: Yes" if include_timestamps else ""
                         metadata_header = f"""# Audio Transcript
 File: {audio_file.name}
 Transcribed: {time.strftime('%Y-%m-%d %H:%M:%S')}
-Words: {word_count}
+Words: {word_count}{duration_str}{timestamps_str}
 
 {'='*60}
 
 """
-                        transcript_file.write_text(metadata_header + transcript, encoding='utf-8')
+                        output_text = transcript_with_ts if include_timestamps else transcript_text
+                        transcript_file.write_text(metadata_header + output_text, encoding='utf-8')
                     else:  # JSON format
                         transcript_file = output_path / f"{filename_base}.json"
                         transcript_data = {
                             'file': audio_file.name,
-                            'transcript': transcript,
+                            'transcript': transcript_text,
                             'word_count': word_count,
                             'transcribed_at': time.strftime('%Y-%m-%d %H:%M:%S')
                         }
+                        if include_timestamps and segments:
+                            transcript_data['segments'] = [
+                                {'start': seg.start, 'end': seg.end, 'text': seg.text}
+                                for seg in segments
+                            ]
+                        if duration:
+                            transcript_data['duration'] = duration
                         with open(transcript_file, 'w', encoding='utf-8') as f:
                             json.dump(transcript_data, f, indent=2, ensure_ascii=False)
                     
