@@ -52,7 +52,7 @@ Write in clear, professional prose that explains concepts thoroughly. Use the in
 Transform this transcript into polished educational prose that preserves the instructor's voice while meeting academic writing standards. Remember: Write everything in {language_name}.
 
 OUTPUT FORMAT REQUIREMENTS:
-Synthesize the content in less than 800 words. Output your response inside a codeblock. Separate your 3 or 4 parts only by ### headings, never use ## or # headings. Do not use the em dash punctuation mark (—) anywhere in your output."""
+Synthesize the content in 500 to 800 words, choosing the length best suited for the material. Output your response inside a codeblock. Separate your 3 or 4 parts only by ### headings, never use ## or # headings. Do not use the em dash punctuation mark (—) anywhere in your output."""
         
         return base_prompt
 
@@ -89,6 +89,98 @@ Synthesize the content in less than 800 words. Output your response inside a cod
             "sr-Latn": "Serbian (Latin)",
         }
         return language_map.get(code, code)
+
+    def _count_words(self, text: str) -> int:
+        """
+        Count words in text, excluding markdown syntax and metadata.
+        
+        Args:
+            text: The markdown text to count words in
+            
+        Returns:
+            Word count
+        """
+        import re
+        
+        # First, extract content from markdown codeblock if present
+        # (LLM outputs chapter inside ```markdown ... ```)
+        codeblock_match = re.search(r'```(?:markdown)?\s*\n?(.*?)\n?```', text, flags=re.DOTALL)
+        if codeblock_match:
+            clean_text = codeblock_match.group(1)
+        else:
+            clean_text = text
+        
+        # Remove chapter ID tags
+        clean_text = re.sub(r'<chapterId>.*?</chapterId>', '', clean_text)
+        # Remove metadata comments
+        clean_text = re.sub(r'<!--.*?-->', '', clean_text, flags=re.DOTALL)
+        # Remove markdown headings markers but keep text
+        clean_text = re.sub(r'^#+\s*', '', clean_text, flags=re.MULTILINE)
+        # Remove inline code
+        clean_text = re.sub(r'`[^`]+`', '', clean_text)
+        # Remove URLs
+        clean_text = re.sub(r'https?://\S+', '', clean_text)
+        # Remove extra whitespace
+        clean_text = ' '.join(clean_text.split())
+        
+        return len(clean_text.split())
+
+    def _strip_codeblock(self, text: str) -> str:
+        """
+        Strip markdown codeblock wrapper from text if present.
+        
+        Args:
+            text: Text that may be wrapped in ```markdown ... ```
+            
+        Returns:
+            Text with codeblock wrapper removed
+        """
+        import re
+        codeblock_match = re.search(r'```(?:markdown)?\s*\n?(.*?)\n?```', text, flags=re.DOTALL)
+        if codeblock_match:
+            return codeblock_match.group(1).strip()
+        return text.strip()
+
+    def _reduce_chapter_length(self, chapter_content: str, current_word_count: int) -> str:
+        """
+        Reduce chapter length while preserving structure and educational tone.
+        
+        Args:
+            chapter_content: The chapter content to reduce
+            current_word_count: Current word count for context
+            
+        Returns:
+            Reduced chapter content
+        """
+        language_name = self._get_language_name(self.language)
+        
+        reduction_prompt = f"""The following chapter content is {current_word_count} words, which exceeds the 800 word limit.
+
+CHAPTER CONTENT:
+{chapter_content}
+
+INSTRUCTIONS:
+- Reduce this chapter to between 500 and 800 words
+- Preserve the exact same structure (headings, sections)
+- Maintain the educational tone and teaching approach
+- Keep the same voice and terminology
+- Focus on the most essential information
+- Remove redundancy while preserving clarity
+- IMPORTANT: Write the entire chapter in {language_name}
+- Output the reduced chapter directly, no explanations"""
+
+        system_prompt = f"""You are an expert editor specializing in educational content. 
+Your task is to condense course material while maintaining quality and educational value.
+Preserve the structure, tone, and teaching style. Write in {language_name}."""
+
+        reduced_content = self.client.generate_text(
+            prompt=reduction_prompt,
+            system_prompt=system_prompt,
+            max_tokens=3000,
+            temperature=0.1
+        )
+        
+        return reduced_content
     
     def generate_chapter(
         self, 
@@ -133,6 +225,23 @@ INSTRUCTIONS:
             max_tokens=4000,
             temperature=0.1
         )
+        
+        # Enforce word limit (500-800 words)
+        max_reduction_attempts = 3
+        for attempt in range(max_reduction_attempts):
+            word_count = self._count_words(chapter_content)
+            if word_count <= 800:
+                break
+            print(f"Chapter exceeds word limit ({word_count} words). Reducing... (attempt {attempt + 1}/{max_reduction_attempts})")
+            chapter_content = self._reduce_chapter_length(chapter_content, word_count)
+        
+        # Final word count check
+        final_word_count = self._count_words(chapter_content)
+        if final_word_count > 800:
+            print(f"Warning: Chapter still exceeds 800 words ({final_word_count} words) after {max_reduction_attempts} reduction attempts")
+        
+        # Strip codeblock wrapper if present (LLM outputs inside ```markdown...```)
+        chapter_content = self._strip_codeblock(chapter_content)
         
         # Generate chapter title from the content (unless custom title provided)
         if chapter_title:
